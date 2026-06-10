@@ -1,0 +1,137 @@
+name: Deploy AI Generator
+
+# Triggers:
+#   - push to main when services/ai-generator/ files change
+#   - workflow_dispatch for manual deploys
+#
+# Build runs in CI (fast, ~30s). Artifact is tarball-SCP'd to server.
+# Server .env is never overwritten — managed separately per Task 5.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/ai-generator/**'
+      - '!services/ai-generator/**/*.test.ts'
+      - '!services/ai-generator/**/*.md'
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip type-check (emergency hotfix only)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: deploy-ai-generator
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: AI Generator Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: services/ai-generator/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./services/ai-generator
+        run: npm ci
+
+      - name: Type-check
+        if: ${{ github.event.inputs.skip_tests != 'true' }}
+        working-directory: ./services/ai-generator
+        run: npm run type-check
+
+      - name: Build
+        working-directory: ./services/ai-generator
+        run: npm run build
+
+      - name: Package artifact
+        working-directory: ./services/ai-generator
+        run: |
+          tar -czf /tmp/ai-generator-deploy.tar.gz \
+            dist/ \
+            package.json \
+            package-lock.json
+          echo "Artifact size: $(du -sh /tmp/ai-generator-deploy.tar.gz | cut -f1)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-generator-dist
+          path: /tmp/ai-generator-deploy.tar.gz
+          retention-days: 1
+
+  deploy:
+    name: Deploy AI Generator to EC2
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-generator-dist
+          path: /tmp/
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST || '3.7.115.58' }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: SCP artifact to server
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.7.115.58' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              /tmp/ai-generator-deploy.tar.gz \
+              "$EC2_USER@$EC2_HOST:/tmp/ai-generator-deploy.tar.gz"
+
+      - name: Extract, install deps, restart
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.7.115.58' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              "$EC2_USER@$EC2_HOST" bash << 'REMOTE'
+            set -euo pipefail
+            TARGET=/opt/ctrlchecks-ai-generator
+
+            echo "── Extracting artifact ──────────────────────────────────"
+            tar -xzf /tmp/ai-generator-deploy.tar.gz -C "$TARGET"
+            rm -f /tmp/ai-generator-deploy.tar.gz
+
+            echo "── Installing production deps ───────────────────────────"
+            cd "$TARGET"
+            npm ci --omit=dev
+
+            echo "── Restarting service ───────────────────────────────────"
+            sudo systemctl restart ctrlchecks-ai-generator
+            sleep 6
+
+            echo "── Health check ─────────────────────────────────────────"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/health)
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ ai-generator healthy on :3002"
+            else
+              echo "❌ Health check failed: HTTP $STATUS"
+              sudo journalctl -u ctrlchecks-ai-generator -n 30 --no-pager
+              exit 1
+            fi
+
+            echo "── Deploy complete ──────────────────────────────────────"
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

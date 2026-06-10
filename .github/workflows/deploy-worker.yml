@@ -1,0 +1,117 @@
+name: Deploy Worker
+
+# Triggers:
+#   - push to main-repair branch (worker's working branch) when worker/ files change
+#   - workflow_dispatch for manual deploys / re-deploys
+#
+# PRs never trigger this job — quality gates are in ci.yml.
+
+on:
+  push:
+    branches: [main-repair]
+    paths:
+      - 'worker/**'
+      - '!worker/**/*.test.ts'
+      - '!worker/**/*.md'
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip type-check (emergency hotfix only)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false   # Never cancel an in-flight deploy
+
+jobs:
+  quality-gate:
+    name: Worker Quality Gate
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./worker
+        run: npm ci
+
+      - name: Type-check
+        working-directory: ./worker
+        run: npm run type-check
+
+  deploy:
+    name: Deploy Worker to EC2
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    # Run even if quality-gate was skipped (emergency dispatch)
+    if: always() && (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped')
+
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST || '3.7.115.58' }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy on server (git pull → build → restart)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.7.115.58' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              "$EC2_USER@$EC2_HOST" bash << 'REMOTE'
+            set -euo pipefail
+            cd /opt/ctrlchecks-worker
+
+            echo "── Pulling latest code ──────────────────────────────────"
+            git fetch origin
+            git reset --hard origin/main-repair
+
+            echo "── Installing dependencies ──────────────────────────────"
+            npm ci
+
+            echo "── Building ─────────────────────────────────────────────"
+            NODE_OPTIONS="--max-old-space-size=4096" npm run build
+
+            echo "── Copying clickup JS node ──────────────────────────────"
+            mkdir -p dist/services/clickup
+            cp src/services/clickup/clickupNode.js dist/services/clickup/clickupNode.js 2>/dev/null || true
+
+            echo "── Running database migrations ──────────────────────────"
+            # Uses DIRECT_DATABASE_URL if set (bypasses PgBouncer); else DATABASE_URL.
+            # Skips gracefully when neither is set (should not happen in production).
+            if grep -qE "^(DIRECT_DATABASE_URL|DATABASE_URL)=" .env 2>/dev/null; then
+              npm run prisma:migrate:deploy && echo "✅ Migrations applied" \
+                || (echo "❌ Migration failed — aborting deploy" && exit 1)
+            else
+              echo "⚠  No DATABASE_URL found in .env — skipping migrations"
+            fi
+
+            echo "── Restarting service ───────────────────────────────────"
+            sudo systemctl restart ctrlchecks-worker
+            sleep 12
+
+            echo "── Health checks ────────────────────────────────────────"
+            curl -fsS http://localhost:3001/health/live  \
+              && echo "✅ /health/live  OK" \
+              || (echo "❌ /health/live FAILED" && sudo journalctl -u ctrlchecks-worker -n 30 --no-pager && exit 1)
+
+            curl -fsS http://localhost:3001/health/ready \
+              && echo "✅ /health/ready OK" \
+              || (echo "❌ /health/ready FAILED (DB or Redis down?)" && exit 1)
+
+            echo "── Deploy complete ──────────────────────────────────────"
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

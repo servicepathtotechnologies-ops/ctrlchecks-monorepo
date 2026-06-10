@@ -1,0 +1,57 @@
+name: Vercel Deploy Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-frontend:
+    name: Validate Frontend for Vercel
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Don't block deployment if this fails
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ctrl_checks/package-lock.json
+      
+      - name: Validate vercel.json
+        working-directory: ./ctrl_checks
+        run: |
+          if [ ! -f vercel.json ]; then
+            echo "❌ vercel.json not found"
+            exit 1
+          fi
+          node -e "JSON.parse(require('fs').readFileSync('vercel.json', 'utf8')); console.log('✅ vercel.json is valid JSON')"
+          echo "✅ vercel.json validation passed"
+      
+      - name: Install dependencies
+        working-directory: ./ctrl_checks
+        run: npm ci
+      
+      - name: Validate TypeScript
+        working-directory: ./ctrl_checks
+        run: npx tsc --noEmit || echo "⚠️ TypeScript errors found (non-blocking)"
+        continue-on-error: true
+      
+      - name: Test build (dry run)
+        working-directory: ./ctrl_checks
+        env:
+          # Use placeholder values for build validation
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder-key
+          VITE_API_URL: https://placeholder.api.com
+          VITE_PYTHON_BACKEND_URL: http://placeholder.com:8000
+          VITE_OLLAMA_BASE_URL: http://placeholder.com:8000
+          VITE_PUBLIC_BASE_URL: https://placeholder.vercel.app
+        run: |
+          echo "🔨 Testing build with placeholder environment variables..."
+          npm run build || echo "⚠️ Build failed (check environment variables in Vercel)"
+        continue-on-error: true

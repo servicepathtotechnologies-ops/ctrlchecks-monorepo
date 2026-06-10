@@ -1,0 +1,173 @@
+name: Deploy Frontend
+
+# Triggers:
+#   - push to main when ctrl_checks/ files change
+#   - workflow_dispatch for manual deploys / forced redeploy with new env values
+#
+# Lint is a HARD GATE — no continue-on-error.
+# VITE_* build-time secrets are injected from GitHub Secrets.
+# The server .env is never written — all config is baked into the JS bundle.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ctrl_checks/**'
+      - '!ctrl_checks/**/*.md'
+      - '!ctrl_checks/src/__tests__/**'
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deploy even without code changes (e.g. env secret rotation)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: deploy-frontend
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    name: Frontend Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ctrl_checks/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./ctrl_checks
+        run: npm ci
+
+      - name: Lint (hard gate — no continue-on-error)
+        working-directory: ./ctrl_checks
+        run: npm run lint
+
+      - name: Type-check
+        working-directory: ./ctrl_checks
+        run: npx tsc --noEmit
+
+  build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    needs: quality-gate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ctrl_checks/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./ctrl_checks
+        run: npm ci
+
+      - name: Build (production with VITE_* secrets)
+        working-directory: ./ctrl_checks
+        env:
+          # ── AWS Cognito ──────────────────────────────────────────────────
+          VITE_AWS_REGION:            ${{ secrets.VITE_AWS_REGION }}
+          VITE_COGNITO_USER_POOL_ID:  ${{ secrets.VITE_COGNITO_USER_POOL_ID }}
+          VITE_COGNITO_CLIENT_ID:     ${{ secrets.VITE_COGNITO_CLIENT_ID }}
+          VITE_COGNITO_DOMAIN:        ${{ secrets.VITE_COGNITO_DOMAIN }}
+          # ── API ──────────────────────────────────────────────────────────
+          VITE_API_URL:               ${{ secrets.VITE_API_URL }}
+          VITE_API_BASE_URL:          ${{ secrets.VITE_API_URL }}
+          VITE_PUBLIC_BASE_URL:       ${{ secrets.VITE_PUBLIC_BASE_URL }}
+          # ── Error tracking ───────────────────────────────────────────────
+          VITE_SENTRY_DSN:            ${{ secrets.VITE_SENTRY_DSN }}
+          # ── Social / OAuth ───────────────────────────────────────────────
+          VITE_META_FACEBOOK_CONFIG_ID:    ${{ secrets.VITE_META_FACEBOOK_CONFIG_ID }}
+          VITE_META_FACEBOOK_EXTRA_SCOPES: 'pages_show_list'
+          # ── Feature flags (safe defaults) ────────────────────────────────
+          VITE_USE_DIRECT_BACKEND: 'false'
+        run: npm run build
+
+      - name: Package dist
+        run: |
+          tar -czf /tmp/frontend-dist.tar.gz -C ctrl_checks/dist .
+          echo "Bundle size: $(du -sh /tmp/frontend-dist.tar.gz | cut -f1)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: /tmp/frontend-dist.tar.gz
+          retention-days: 3
+
+  deploy:
+    name: Deploy Frontend to EC2
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: /tmp/
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST || '3.7.115.58' }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: SCP artifact to server
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.7.115.58' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              /tmp/frontend-dist.tar.gz \
+              "$EC2_USER@$EC2_HOST:/tmp/frontend-dist.tar.gz"
+
+      - name: Extract and reload nginx
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.7.115.58' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              "$EC2_USER@$EC2_HOST" bash << 'REMOTE'
+            set -euo pipefail
+            SERVER_PATH=/var/www/ctrlchecks-frontend
+
+            echo "── Ensuring web root exists ─────────────────────────────"
+            sudo mkdir -p "$SERVER_PATH"
+            sudo chown -R ubuntu:ubuntu "$SERVER_PATH"
+
+            echo "── Extracting artifact ──────────────────────────────────"
+            tar -xzf /tmp/frontend-dist.tar.gz -C "$SERVER_PATH"
+            rm -f /tmp/frontend-dist.tar.gz
+
+            echo "── Reloading nginx (zero-downtime) ──────────────────────"
+            sudo nginx -t
+            sudo systemctl reload nginx
+
+            echo "── Smoke test ───────────────────────────────────────────"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Host: app.ctrlchecks.ai" http://localhost/)
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ SPA serving HTTP 200"
+            else
+              echo "❌ Smoke test failed: HTTP $STATUS"
+              sudo journalctl -u nginx -n 20 --no-pager
+              exit 1
+            fi
+
+            echo "── Deploy complete ──────────────────────────────────────"
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
