@@ -14,6 +14,7 @@ export async function getDb(): Promise<Pool | null> {
       max: 5,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 3000,
+      ssl: { rejectUnauthorized: false },
     });
     return pool;
   } catch {

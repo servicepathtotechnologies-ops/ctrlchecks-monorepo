@@ -9,7 +9,7 @@ export async function getDb(): Promise<Pool | null> {
   if (!url) return null;
 
   try {
-    pool = new Pool({ connectionString: url, max: 2, idleTimeoutMillis: 30000, connectionTimeoutMillis: 3000 });
+    pool = new Pool({ connectionString: url, max: 2, idleTimeoutMillis: 30000, connectionTimeoutMillis: 3000, ssl: { rejectUnauthorized: false } });
     return pool;
   } catch {
     return null;
