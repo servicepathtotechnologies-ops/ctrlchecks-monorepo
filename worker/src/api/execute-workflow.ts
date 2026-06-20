@@ -21208,6 +21208,19 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       console.warn('⚠️  [Memory] Failed to store execution in memory system:', memoryError instanceof Error ? memoryError.message : String(memoryError));
     }
 
+    // ── Execution completion notifications (non-blocking, best-effort) ──────────
+    const notifyUserId = currentUserId || (workflow as any)?.user_id;
+    if (notifyUserId && executionId && workflowId) {
+      const { dispatchExecutionNotifications } = await import('../services/notifications/dispatch-execution-notifications');
+      dispatchExecutionNotifications({
+        userId: notifyUserId,
+        workflowId,
+        executionId,
+        succeeded: !hasError,
+        error: hasError ? errorMessage : undefined,
+      });
+    }
+
     // Return response
     if (hasError) {
       return res.status(500).json({

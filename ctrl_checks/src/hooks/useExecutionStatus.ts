@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { awsClient } from '@/integrations/aws/client';
 import { useWorkflowStore } from '@/stores/workflowStore';
 import { useExecutionWebSocket } from './useExecutionWebSocket';
@@ -15,12 +15,14 @@ export function useExecutionStatus() {
   const executionId = activeExecution?.executionId ?? null;
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tokenRef = useRef<string | null>(null);
+  // Track token in state so a WS reconnect is triggered when the session resolves.
+  // tokenRef was a plain ref before — changing it didn't re-render, so WS always
+  // connected with token=null and fell back to polling immediately.
+  const [token, setToken] = useState<string | null>(null);
 
-  // Keep a fresh token for the WS URL
   useEffect(() => {
     awsClient.auth.getSession().then(({ data }) => {
-      tokenRef.current = data?.session?.access_token ?? null;
+      setToken(data?.session?.access_token ?? null);
     });
   }, [executionId]);
 
@@ -34,9 +36,9 @@ export function useExecutionStatus() {
   const pollOnce = useCallback(async (id: string) => {
     try {
       const { data: sessionData } = await awsClient.auth.getSession();
-      const token = sessionData?.session?.access_token;
+      const tok = sessionData?.session?.access_token;
       const res = await fetch(`${ENDPOINTS.itemBackend}/api/execution-status/${id}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
       });
       if (!res.ok) return;
       const body = await res.json();
@@ -75,7 +77,7 @@ export function useExecutionStatus() {
 
   const { connected, reconnecting } = useExecutionWebSocket({
     executionId,
-    token: tokenRef.current,
+    token,
     onMessage: handleWsMessage,
   });
 
