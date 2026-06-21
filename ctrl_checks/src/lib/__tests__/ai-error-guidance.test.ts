@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { GuidedStatusContent } from '../workflow-guidance';
-import { mapWorkflowIssueToGuidance } from '../workflow-guidance';
+import { type GuidedStatusContent, mapWorkflowIssueToGuidance } from '../workflow-guidance';
 import { getAIGuidance } from '../ai-error-guidance';
 
 // ── module mocks ─────────────────────────────────────────────────────────────

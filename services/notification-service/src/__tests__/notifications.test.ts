@@ -163,21 +163,21 @@ describe('POST /notifications/send', () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
 
-  it('returns 501 for channel=in_app (Phase 3)', async () => {
+  it('returns 401 for channel=in_app without user header', async () => {
     const res = await request(app)
       .post('/notifications/send')
       .send({ type: 'ping', channel: 'in_app', data: {} });
 
-    expect(res.status).toBe(501);
-    expect(res.body.error).toBe('NOTIFICATION_SERVICE_STUB');
+    expect(res.status).toBe(401);
   });
 
-  it('returns 501 for unknown channel', async () => {
+  it('returns 400 for unknown channel', async () => {
     const res = await request(app)
       .post('/notifications/send')
       .send({ type: 'ping', channel: 'carrier_pigeon', data: {} });
 
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('UNKNOWN_CHANNEL');
   });
 
   it('returns 400 for channel=email without templateId', async () => {

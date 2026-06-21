@@ -6,12 +6,12 @@ import {
 
 // ── awsClient mock (required for roles.ts) ─────────────────────────────
 const { mockGetUser, mockRpc, mockEq, mockSelect, mockFrom } = vi.hoisted(() => {
-  const mockEq = vi.fn();
-  const mockSelect = vi.fn(() => ({ eq: mockEq }));
-  const mockFrom = vi.fn(() => ({ select: mockSelect }));
-  const mockGetUser = vi.fn();
-  const mockRpc = vi.fn();
-  return { mockGetUser, mockRpc, mockEq, mockSelect, mockFrom };
+  const _eq = vi.fn();
+  const _select = vi.fn(() => ({ eq: _eq }));
+  const _from = vi.fn(() => ({ select: _select }));
+  const _getUser = vi.fn();
+  const _rpc = vi.fn();
+  return { mockGetUser: _getUser, mockRpc: _rpc, mockEq: _eq, mockSelect: _select, mockFrom: _from };
 });
 
 vi.mock('@/integrations/aws/client', () => ({
