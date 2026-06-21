@@ -6,9 +6,9 @@ name: CI
 
 on:
   push:
-    branches: [main, main-repair, develop]
+    branches: [main, master, main-repair, develop]
   pull_request:
-    branches: [main, main-repair, develop]
+    branches: [main, master, main-repair, develop]
 
 jobs:
   # ── Worker: type-check + build ─────────────────────────────────────────────
@@ -158,3 +158,171 @@ jobs:
           name: frontend-dist-ci
           path: ctrl_checks/dist/
           retention-days: 3
+
+  # ── Worker: smoke tests (mocked — no live RDS/Cognito/EC2) ────────────────
+  #
+  # Three sub-jobs mirror the T3 live-test tiers (T3a/b/c) but run entirely
+  # on mocked data. Known P3/P4 failures (LT-001–010) are excluded.
+  # See .claude/logs/LIVE_TEST_ISSUES.md for the exclusion rationale.
+  #
+  # NOT included: T4 live harness (needs LIVE_TEST_BEARER_TOKEN + live server).
+  # NOT included: npm test --coverage or full 453-file suite (OOM on runners).
+
+  worker-test-contracts:
+    name: Worker Tests — Registry Contracts
+    runs-on: ubuntu-latest
+    needs: worker-type-check
+
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./worker
+        run: npm ci
+
+      - name: Registry contract tests
+        # Runs unified-node-registry-contract.test.ts (~3378 tests).
+        # Excludes src/core/contracts/ — 3 files have pre-existing P3/P4 shape
+        # mismatches (LT-002 label/category, LT-003 slack field). These are
+        # test-shape bugs, not execution regressions.
+        working-directory: ./worker
+        run: |
+          npx jest \
+            "src/core/registry/__tests__/unified-node-registry-contract.test.ts" \
+            --runInBand --no-coverage --passWithNoTests
+
+  worker-test-delegation:
+    name: Worker Tests — Microservice Delegation
+    runs-on: ubuntu-latest
+    needs: worker-type-check
+
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./worker
+        run: npm ci
+
+      - name: Microservice delegation client tests
+        # Tests for all 4 service clients: trigger, crud, credential, execution-engine.
+        # All 111 tests are mocked (no live service required).
+        working-directory: ./worker
+        run: npm run test:microservices-delegation
+
+  worker-test-fix-regressions:
+    name: Worker Tests — FIX Regression Suite
+    runs-on: ubuntu-latest
+    needs: worker-type-check
+
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./worker
+        run: npm ci
+
+      - name: FIX-1/2/3 regression tests
+        # Guards the 3 production fixes: if_else conditions (FIX-1), form-trigger
+        # pause (FIX-2), execution notification dispatch (FIX-3).
+        # Excludes bug-doc test files (LT-004/005/007/008) — intentional red tests.
+        working-directory: ./worker
+        run: |
+          npx jest \
+            --runInBand --no-coverage --passWithNoTests \
+            --testPathPattern "form-trigger|dispatch-execution-notifications|email-service|if_else" \
+            --testPathIgnorePatterns "bug-condition|fillmode|log-output-merge|branch-generation"
+
+  # ── workflow-crud-service: full test suite ───────────────────────────────
+  workflow-crud-service-test:
+    name: workflow-crud-service Tests (30+)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: services/workflow-crud-service/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./services/workflow-crud-service
+        run: npm ci
+
+      - name: Run tests
+        # Full suite — 70 tests including LT-012 quota RPC tests (30+ in workflows.test.ts).
+        # All DB calls are mocked; no live RDS required.
+        working-directory: ./services/workflow-crud-service
+        run: npm test -- --runInBand --no-coverage
+
+  # ── Microservices: per-service smoke (parallel) ──────────────────────────
+  microservices-smoke:
+    name: ${{ matrix.service }} Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: ai-generator
+            path: services/ai-generator
+            lock: services/ai-generator/package-lock.json
+          - service: execution-engine
+            path: services/execution-engine
+            lock: services/execution-engine/package-lock.json
+          - service: credential-service
+            path: services/credential-service
+            lock: services/credential-service/package-lock.json
+          - service: notification-service
+            path: services/notification-service
+            lock: services/notification-service/package-lock.json
+          - service: trigger-service
+            path: services/trigger-service
+            lock: services/trigger-service/package-lock.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ${{ matrix.lock }}
+
+      - name: Install dependencies
+        working-directory: ./${{ matrix.path }}
+        run: npm ci
+
+      - name: Run tests
+        working-directory: ./${{ matrix.path }}
+        run: npm test -- --runInBand --no-coverage --passWithNoTests
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
