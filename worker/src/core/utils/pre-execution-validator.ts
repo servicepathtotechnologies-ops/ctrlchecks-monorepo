@@ -92,10 +92,12 @@ export function validateWorkflowConfig(
   );
 
   const intelligenceIssues = validateWorkflowNodeIntelligence({ nodes: nodes as any, edges: [] });
-  const blockingIntelligenceIssues = intelligenceIssues.filter((issue) => issue.severity === 'error');
+  // Intelligence issues are advisory only — they cannot see the credential vault or runtime
+  // template values, so treating them as hard blocks causes false "stuck at running" executions.
+  // Only nodeDefinitionRegistry.validateInputs() issues (real missing config) block execution.
 
   return {
-    valid: issues.length === 0 && blockingIntelligenceIssues.length === 0,
+    valid: issues.length === 0,
     issues,
     validationIssues: intelligenceIssues,
     missingInputs,

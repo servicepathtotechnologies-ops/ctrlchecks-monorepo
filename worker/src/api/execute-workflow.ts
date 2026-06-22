@@ -18519,6 +18519,14 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     }
 
     console.error(`[ExecuteWorkflow] Engine unavailable for ${engineExecId} — returning 503`);
+    // ✅ FIX: Mark pre-created execution as failed so UI doesn't stay stuck at "running".
+    if (providedExecutionId) {
+      await db.from('executions').update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error: 'Execution engine unavailable — could not process workflow',
+      }).eq('id', providedExecutionId).catch(() => {});
+    }
     return res.status(503).json({
       error: 'Service Unavailable',
       code: 'EXECUTION_ENGINE_UNAVAILABLE',
@@ -19583,6 +19591,10 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     
     // ✅ VALIDATION: Fail fast if execution plan has errors
     if (executionPlan.validationErrors.length > 0) {
+      const errMsg = `Workflow validation failed: ${executionPlan.validationErrors.join('; ')}`;
+      if (executionId) {
+        await db.from('executions').update({ status: 'failed', finished_at: new Date().toISOString(), error: errMsg }).eq('id', executionId).catch(() => {});
+      }
       return res.status(400).json({
         code: ErrorCode.EXECUTION_NOT_READY,
         error: 'Workflow validation failed',
@@ -19594,17 +19606,21 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         hint: 'Please fix the workflow validation errors before executing.',
       });
     }
-    
+
     // ✅ VALIDATION: Warn about multiple triggers (should have been caught, but double-check)
     if (!executionPlan.triggerNode) {
+      const errMsg = 'Workflow must have exactly one trigger node';
+      if (executionId) {
+        await db.from('executions').update({ status: 'failed', finished_at: new Date().toISOString(), error: errMsg }).eq('id', executionId).catch(() => {});
+      }
       return res.status(400).json({
         code: ErrorCode.EXECUTION_NOT_READY,
         error: 'Workflow validation failed',
-        message: 'Workflow must have exactly one trigger node',
+        message: errMsg,
         hint: 'Please add a trigger node to your workflow.',
       });
     }
-    
+
     // ✅ PRE-EXECUTION: Validate all node configs before any node runs
     const { validateWorkflowConfig } = await import('../core/utils/pre-execution-validator');
     const configCheck = validateWorkflowConfig(
@@ -19615,6 +19631,10 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       })),
     );
     if (!configCheck.valid) {
+      const errMsg = `Missing required fields: ${configCheck.issues.map(i => `${i.nodeLabel} (${i.missingFields.map(f => f.fieldName).join(', ')})`).join('; ')}`;
+      if (executionId) {
+        await db.from('executions').update({ status: 'failed', finished_at: new Date().toISOString(), error: errMsg }).eq('id', executionId).catch(() => {});
+      }
       return res.status(400).json({
         code: 'MISSING_REQUIRED_INPUTS',
         error: 'Some nodes have missing required fields',
@@ -21243,13 +21263,13 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     const errorObj = error instanceof Error ? error : new Error(String(error));
     console.error(`[Workflow ${req.body.workflowId || 'unknown'}] Execute workflow error:`, errorObj.message, errorObj);
     const errorMessage = errorObj.message;
-    
+
     // ✅ CRITICAL: Release lock on error
     if (executionId && workflowId) {
       try {
         const { releaseExecutionLock } = await import('../services/execution/execution-lock');
         const { logExecutionEvent } = await import('../services/execution/execution-event-logger');
-        
+
         await releaseExecutionLock(db, workflowId, executionId);
         await logExecutionEvent(db, executionId, workflowId, 'RUN_FAILED', {
           error: errorMessage,
@@ -21264,7 +21284,18 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         console.error('[ExecuteWorkflow] Failed to cleanup on error:', cleanupError);
       }
     }
-    
+
+    // ✅ FIX: Mark execution as failed so the UI doesn't stay stuck at "running" forever.
+    // This is the safety net for any unhandled throw before centralState.updateStatus runs.
+    if (executionId) {
+      await db.from('executions').update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error: errorMessage,
+        ...(logs?.length ? { logs } : {}),
+      }).eq('id', executionId).catch(() => {});
+    }
+
     return res.status(500).json({
       error: errorMessage,
       executionId: executionId ?? 'unknown',
