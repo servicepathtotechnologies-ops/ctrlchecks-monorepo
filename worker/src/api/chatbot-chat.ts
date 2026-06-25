@@ -4,6 +4,7 @@
 import { Request, Response } from 'express';
 import { chatbotPageGenerator } from '../services/chatbot-page-generator';
 import { getDbClient } from '../core/database/aws-db-client';
+import { logger } from '../core/logger';
 
 /**
  * Serve chat UI for a chatbot workflow
@@ -85,7 +86,7 @@ export async function serveChatbotChat(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
   } catch (error) {
-    console.error('Error serving chatbot chat:', error);
+    logger.error('Error serving chatbot chat:', error);
     res.status(500).send(`
       <html>
         <body style="font-family: sans-serif; padding: 40px; text-align: center;">
@@ -416,7 +417,7 @@ function generateN8NStyleChatUI(config: {
 
                 addMessage(reply, false);
             } catch (error) {
-                console.error('Chat error:', error);
+                logger.error('Chat error:', error);
                 showError('Failed to send message. Please try again.');
             } finally {
                 sendButton.disabled = false;

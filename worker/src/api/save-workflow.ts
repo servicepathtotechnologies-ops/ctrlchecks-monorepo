@@ -18,6 +18,7 @@ import {
   saveWorkflowRemote,
   isWorkflowCrudLocalWritesDisabled,
 } from '../services/workflow-crud-service-client';
+import { logger } from '../core/logger';
 
 interface WorkflowNode {
   id: string;
@@ -95,7 +96,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
              ['manual_trigger', 'webhook', 'schedule', 'interval', 'form', 'chat_trigger', 'form_trigger'].includes(nodeType);
     };
     
-    console.log('[SaveWorkflow] 📥 Received workflow:', {
+    logger.info('[SaveWorkflow] 📥 Received workflow:', {
       workflowId,
       name,
       nodeCount: nodes.length,
@@ -112,7 +113,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
     const normalized = normalizeWorkflowForSave(nodes, edges);
     
     // ✅ DEBUG: Log normalization results
-    console.log('[SaveWorkflow] 🔄 Normalized workflow:', {
+    logger.info('[SaveWorkflow] 🔄 Normalized workflow:', {
       originalNodeCount: nodes.length,
       normalizedNodeCount: normalized.nodes.length,
       originalEdgeCount: edges.length,
@@ -127,7 +128,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
     });
     
     if (normalized.migrationsApplied.length > 0) {
-      console.log('[SaveWorkflow] ✅ Applied migrations:', normalized.migrationsApplied);
+      logger.info('[SaveWorkflow] ✅ Applied migrations:', normalized.migrationsApplied);
     }
 
     // 2. Validate workflow (fail-fast)
@@ -152,7 +153,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
 
     // 3. Log warnings (non-blocking)
     if (validation.warnings.length > 0) {
-      console.warn('[SaveWorkflow] Validation warnings:', validation.warnings);
+      logger.warn('[SaveWorkflow] Validation warnings:', validation.warnings);
     }
 
     // 3a. Workflow CRUD service canary — delegate if enabled for this userId.
@@ -168,12 +169,12 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
           metadata: (req.body.metadata as Record<string, unknown> | undefined) ?? {},
         });
         if (remote) {
-          console.log(`[SaveWorkflow] ✅ Delegated to workflow-crud-service (workflowId=${remote.workflowId})`);
+          logger.info(`[SaveWorkflow] ✅ Delegated to workflow-crud-service (workflowId=${remote.workflowId})`);
           return res.json({ ...remote, source: 'workflow-crud-service' });
         }
-        console.warn('[SaveWorkflow] workflow-crud-service returned null — falling back to local path');
+        logger.warn('[SaveWorkflow] workflow-crud-service returned null — falling back to local path');
       } catch (delegateErr) {
-        console.warn('[SaveWorkflow] workflow-crud-service delegation error — falling back:', delegateErr);
+        logger.warn('[SaveWorkflow] workflow-crud-service delegation error — falling back:', delegateErr);
       }
       // LOCAL_WRITES_DISABLED gate — no double-write during retirement soak.
       if (isWorkflowCrudLocalWritesDisabled()) {
@@ -196,7 +197,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
           .single();
         previousWorkflow = data as Record<string, unknown> | null;
       } catch (versionError) {
-        console.warn('[SaveWorkflow] Could not load previous workflow for update:', versionError);
+        logger.warn('[SaveWorkflow] Could not load previous workflow for update:', versionError);
       }
     }
 
@@ -265,7 +266,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
         .single();
 
       if (error) {
-        console.error('[SaveWorkflow] Update error:', error);
+        logger.error('[SaveWorkflow] Update error:', error);
         return res.status(500).json({
           code: ErrorCode.INTERNAL_ERROR,
           error: 'Failed to update workflow',
@@ -301,7 +302,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
         .single();
 
       if (error) {
-        console.error('[SaveWorkflow] Insert error:', error);
+        logger.error('[SaveWorkflow] Insert error:', error);
         return res.status(500).json({
           code: ErrorCode.INTERNAL_ERROR,
           error: 'Failed to create workflow',
@@ -357,7 +358,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
       );
     } catch (versionError) {
       // Versioning is non-critical - log but don't fail the save
-      console.warn('[SaveWorkflow] Versioning failed (non-critical):', versionError);
+      logger.warn('[SaveWorkflow] Versioning failed (non-critical):', versionError);
     }
 
     // ✅ CRITICAL: Invalidate any workflow caches after save
@@ -367,11 +368,11 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
       // MemoryManager uses CacheManager internally - invalidate if available
       if (memoryManager && (memoryManager as any).cache) {
         (memoryManager as any).cache.invalidateWorkflow(savedWorkflow.id);
-        console.log(`[SaveWorkflow] ✅ Invalidated cache for workflow ${savedWorkflow.id}`);
+        logger.info(`[SaveWorkflow] ✅ Invalidated cache for workflow ${savedWorkflow.id}`);
       }
     } catch (cacheError) {
       // Cache invalidation is non-critical - log but don't fail
-      console.warn('[SaveWorkflow] Cache invalidation failed (non-fatal):', cacheError);
+      logger.warn('[SaveWorkflow] Cache invalidation failed (non-fatal):', cacheError);
     }
 
     // ✅ DEBUG: Log graph hash for verification
@@ -380,7 +381,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
       edges: savedWorkflow.edges?.map((e: any) => ({ source: e.source, target: e.target }))
     });
     const hash = require('crypto').createHash('md5').update(graphHash).digest('hex').substring(0, 8);
-    console.log(`[SaveWorkflow] 💾 Workflow saved - Graph hash: ${hash}, Updated at: ${savedWorkflow.updated_at}`);
+    logger.info(`[SaveWorkflow] 💾 Workflow saved - Graph hash: ${hash}, Updated at: ${savedWorkflow.updated_at}`);
 
     // 6. Return success response
     return res.json({
@@ -394,7 +395,7 @@ export default async function saveWorkflowHandler(req: Request, res: Response) {
       },
     });
   } catch (error: any) {
-    console.error('[SaveWorkflow] Unexpected error:', error);
+    logger.error('[SaveWorkflow] Unexpected error:', error);
     return res.status(500).json({
       code: ErrorCode.INTERNAL_ERROR,
       error: 'Failed to save workflow',

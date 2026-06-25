@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { queryAsService } from '../core/database/db-pool';
 import { config } from '../core/config';
 import { encryptToken } from '../core/utils/token-encryption';
+import { logger } from '../core/logger';
 
 const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID || '';
 const LINKEDIN_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
@@ -144,7 +145,7 @@ export async function linkedInOAuthCallback(req: Request, res: Response) {
         tokenData.scope || LINKEDIN_SCOPES,
       ]
     ).catch((err) => {
-      console.warn('[LinkedInOAuth] social_tokens mirror failed:', err.message);
+      logger.warn('[LinkedInOAuth] social_tokens mirror failed:', err.message);
     });
 
     await queryAsService(
@@ -163,7 +164,7 @@ export async function linkedInOAuthCallback(req: Request, res: Response) {
         }),
       ]
     ).catch((err) => {
-      console.warn('[LinkedInOAuth] user_credentials mirror failed:', err.message);
+      logger.warn('[LinkedInOAuth] user_credentials mirror failed:', err.message);
     });
 
     const displayName = profile.name || profile.email || '';
@@ -172,7 +173,7 @@ export async function linkedInOAuthCallback(req: Request, res: Response) {
       `${FRONTEND_URL}/auth/linkedin/callback?success=true&name=${encodeURIComponent(displayName)}&return_to=${returnUrl}`
     );
   } catch (err: any) {
-    console.error('[LinkedInOAuth] Error:', err.message);
+    logger.error('[LinkedInOAuth] Error:', err.message);
     return res.redirect(`${FRONTEND_URL}/auth/linkedin/callback?error=${encodeURIComponent(err.message || 'oauth_failed')}`);
   }
 }

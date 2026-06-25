@@ -13,6 +13,7 @@ import { queryAsService } from '../core/database/db-pool';
 import { config } from '../core/config';
 import { encryptToken } from '../core/utils/token-encryption';
 import crypto from 'crypto';
+import { logger } from '../core/logger';
 
 const META_APP_ID     = process.env.META_APP_ID     || process.env.FACEBOOK_APP_ID     || '';
 const META_APP_SECRET = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET || '';
@@ -139,7 +140,7 @@ export async function facebookOAuthCallback(req: Request, res: Response) {
        'pages_show_list,pages_read_engagement,pages_manage_posts', expiresAt]
     );
 
-    console.log(`[FacebookOAuth] ✅ Connected Facebook for user ${userId} (fb_id: ${profile.id})`);
+    logger.info(`[FacebookOAuth] ✅ Connected Facebook for user ${userId} (fb_id: ${profile.id})`);
 
     const returnUrl = encodeURIComponent(redirectTo || '/workflows');
     return res.redirect(
@@ -147,7 +148,7 @@ export async function facebookOAuthCallback(req: Request, res: Response) {
     );
 
   } catch (err: any) {
-    console.error('[FacebookOAuth] Error:', err.message);
+    logger.error('[FacebookOAuth] Error:', err.message);
     return res.redirect(
       `${FRONTEND_URL}/auth/facebook/callback?error=${encodeURIComponent(err.message || 'oauth_failed')}`
     );

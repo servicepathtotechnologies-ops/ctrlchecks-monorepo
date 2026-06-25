@@ -50,6 +50,7 @@ import { readAcknowledgedHttpResponse } from '../core/http/acknowledged-response
 import { connectionService } from '../credentials-system/connection-service';
 import { stripSystemKeys, stripRoutingMeta } from '../core/execution/system-key-filter';
 import { geminiWalletService } from '../services/ai/gemini-wallet-service';
+import { logger } from '../core/logger';
 
 const EXECUTION_RUNTIME_MARKER = 'runtime-marker-2026-03-20-v1';
 
@@ -458,7 +459,7 @@ async function getAcceptedCredentialTypesForNode(node: WorkflowNode): Promise<Se
     }
     return ids;
   } catch (error) {
-    console.warn('[execute-workflow] Unable to inspect credential schema for selected connection validation', {
+    logger.warn('[execute-workflow] Unable to inspect credential schema for selected connection validation', {
       nodeType,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -571,7 +572,7 @@ async function injectSelectedConnectionCredentials(params: {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to resolve selected connection';
       // Stale/wrong ref — try auto-selecting the canonical connection for this node instead
-      console.warn(`[CredentialInjection] Explicit connectionRef failed (${message}), trying auto-selection fallback`);
+      logger.warn(`[CredentialInjection] Explicit connectionRef failed (${message}), trying auto-selection fallback`);
       try {
         const { unifiedNodeRegistry } = await import('../core/registry/unified-node-registry');
         const nodeType = String((params.node.data as any)?.type || params.node.type || '');
@@ -878,7 +879,7 @@ function resolveTemplate(template: string, context: Record<string, unknown>, nod
       
       if (!validation.valid && validation.error) {
         // Log validation warning but still return resolved value (non-strict mode)
-        console.warn(`[Template Validation] ${nodeId ? `Node ${nodeId}: ` : ''}${validation.error}`);
+        logger.warn(`[Template Validation] ${nodeId ? `Node ${nodeId}: ` : ''}${validation.error}`);
       }
       
       return String(resolvedValue);
@@ -898,7 +899,7 @@ function resolveTemplate(template: string, context: Record<string, unknown>, nod
       }
       
       // Log helpful error message
-      console.warn(`[Template Validation] ${nodeId ? `Node ${nodeId}: ` : ''}${errorMessage}`);
+      logger.warn(`[Template Validation] ${nodeId ? `Node ${nodeId}: ` : ''}${errorMessage}`);
       
       // Single-path strict mode: throw error on unresolved template validation failures.
       if (config.reliability.strictValidation) {
@@ -969,7 +970,7 @@ async function getAWSCredentials(
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error retrieving credentials';
-    console.error('[AmazonSES] Credential retrieval error:', errorMessage);
+    logger.error('[AmazonSES] Credential retrieval error:', errorMessage);
     throw new Error(`AWS credential retrieval failed: ${errorMessage}`);
   }
 }
@@ -993,7 +994,7 @@ function validateAWSCredentialsStructure(credentials: any): AWSCredentials | nul
   const region = credentials.region || 'us-east-1';
 
   if (!accessKeyId || !secretAccessKey) {
-    console.warn('[AmazonSES] Credentials missing required fields (accessKeyId, secretAccessKey)');
+    logger.warn('[AmazonSES] Credentials missing required fields (accessKeyId, secretAccessKey)');
     return null;
   }
 
@@ -1048,11 +1049,11 @@ function initializeAWSSESClient(credentials: AWSCredentials, region?: string): a
       },
     });
 
-    console.log(`[AmazonSES] ✅ SES client initialized for region: ${sesRegion}`);
+    logger.info(`[AmazonSES] ✅ SES client initialized for region: ${sesRegion}`);
     return client;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[AmazonSES] SES client initialization error:', errorMessage);
+    logger.error('[AmazonSES] SES client initialization error:', errorMessage);
     throw new Error(`AWS SES client initialization failed: ${errorMessage}`);
   }
 }
@@ -1141,7 +1142,7 @@ function resolveAWSRegion(awsRegion?: string): string {
 
   // Validate region is valid AWS region
   if (!validRegions.includes(region)) {
-    console.warn(`[AmazonSES] Invalid region '${region}', using default 'us-east-1'`);
+    logger.warn(`[AmazonSES] Invalid region '${region}', using default 'us-east-1'`);
     return 'us-east-1';
   }
 
@@ -1298,18 +1299,18 @@ export async function fetchAWSSESTemplate(
   try {
     // Check cache first
     if (templateCache.has(templateName)) {
-      console.log(`[AmazonSES] Using cached template: ${templateName}`);
+      logger.info(`[AmazonSES] Using cached template: ${templateName}`);
       return templateCache.get(templateName);
     }
     
     // Fetch template from AWS SES
-    console.log(`[AmazonSES] Fetching template from AWS SES: ${templateName}`);
+    logger.info(`[AmazonSES] Fetching template from AWS SES: ${templateName}`);
     const { GetTemplateCommand } = require('@aws-sdk/client-ses');
     const command = new GetTemplateCommand({ TemplateName: templateName });
     const response = await sesClient.send(command);
     
     if (!response.Template) {
-      console.error(`[AmazonSES] Template not found: ${templateName}`);
+      logger.error(`[AmazonSES] Template not found: ${templateName}`);
       return null;
     }
     
@@ -1321,11 +1322,11 @@ export async function fetchAWSSESTemplate(
     
     // Cache template for performance
     templateCache.set(templateName, template);
-    console.log(`[AmazonSES] Template cached: ${templateName}`);
+    logger.info(`[AmazonSES] Template cached: ${templateName}`);
     
     return template;
   } catch (error: any) {
-    console.error(`[AmazonSES] Error fetching template: ${error.message}`);
+    logger.error(`[AmazonSES] Error fetching template: ${error.message}`);
     if (error.name === 'TemplateDoesNotExistException') {
       return null;
     }
@@ -1399,7 +1400,7 @@ export function populateAWSSESTemplate(
       const value = templateData[trimmedVar];
       
       if (value === null || value === undefined) {
-        console.warn(`[AmazonSES] Template variable not provided: ${trimmedVar}`);
+        logger.warn(`[AmazonSES] Template variable not provided: ${trimmedVar}`);
         return match; // Keep original placeholder if data not provided
       }
       
@@ -1880,7 +1881,7 @@ export async function sendEmailViaSES(
     };
   } catch (error: any) {
     const errorMessage = error.message || String(error);
-    console.error('[AmazonSES] Send error:', errorMessage);
+    logger.error('[AmazonSES] Send error:', errorMessage);
     return {
       success: false,
       messageId: '',
@@ -1964,11 +1965,11 @@ export async function sendEmailWithRetry(
     attempts = attempt + 1;
 
     try {
-      console.log(`[AmazonSES] Send attempt ${attempts}/${maxRetries + 1}`);
+      logger.info(`[AmazonSES] Send attempt ${attempts}/${maxRetries + 1}`);
       const result = await sendEmailViaSES(emailMessage, sesClient);
 
       if (result.success) {
-        console.log(`[AmazonSES] ✅ Email sent successfully on attempt ${attempts}`);
+        logger.info(`[AmazonSES] ✅ Email sent successfully on attempt ${attempts}`);
         return {
           ...result,
           attempts,
@@ -1983,13 +1984,13 @@ export async function sendEmailWithRetry(
     // Check if error is retryable
     const classification = classifyAWSError(lastError);
     if (!classification.retryable) {
-      console.error(`[AmazonSES] ❌ Permanent error, not retrying: ${classification.message}`);
+      logger.error(`[AmazonSES] ❌ Permanent error, not retrying: ${classification.message}`);
       throw lastError;
     }
 
     // If this was the last attempt, throw error
     if (attempt === maxRetries) {
-      console.error(`[AmazonSES] ❌ Max retries (${maxRetries}) exceeded`);
+      logger.error(`[AmazonSES] ❌ Max retries (${maxRetries}) exceeded`);
       throw lastError;
     }
 
@@ -1999,7 +2000,7 @@ export async function sendEmailWithRetry(
     const jitter = Math.random() * 1000; // 0-1 second jitter
     const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay) + jitter;
 
-    console.log(`[AmazonSES] ⏳ Retrying in ${(delay / 1000).toFixed(2)}s (attempt ${attempt + 1}/${maxRetries})`);
+    logger.info(`[AmazonSES] ⏳ Retrying in ${(delay / 1000).toFixed(2)}s (attempt ${attempt + 1}/${maxRetries})`);
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 
@@ -2365,12 +2366,12 @@ export async function logEmailAttempt(
     });
 
     if (error) {
-      console.error('[AmazonSES] Error logging email attempt:', error);
+      logger.error('[AmazonSES] Error logging email attempt:', error);
     } else {
-      console.log(`[AmazonSES] Email attempt logged: ${logData.workflowId}/${logData.nodeId}`);
+      logger.info(`[AmazonSES] Email attempt logged: ${logData.workflowId}/${logData.nodeId}`);
     }
   } catch (error) {
-    console.error('[AmazonSES] Exception logging email attempt:', error);
+    logger.error('[AmazonSES] Exception logging email attempt:', error);
   }
 }
 
@@ -2412,12 +2413,12 @@ export async function logDetailedError(
     });
 
     if (error) {
-      console.error('[AmazonSES] Error logging error details:', error);
+      logger.error('[AmazonSES] Error logging error details:', error);
     } else {
-      console.log(`[AmazonSES] Error logged: ${errorData.workflowId}/${errorData.nodeId}`);
+      logger.info(`[AmazonSES] Error logged: ${errorData.workflowId}/${errorData.nodeId}`);
     }
   } catch (error) {
-    console.error('[AmazonSES] Exception logging error details:', error);
+    logger.error('[AmazonSES] Exception logging error details:', error);
   }
 }
 
@@ -2461,7 +2462,7 @@ export async function executeNode(
       dynamicResult !== null &&
       !(typeof dynamicResult === 'object' && '_error' in dynamicResult)
     ) {
-      console.log(`[ExecuteNode] ✅ Executed ${node.data?.label || node.id} using dynamic executor`);
+      logger.info(`[ExecuteNode] ✅ Executed ${node.data?.label || node.id} using dynamic executor`);
       return dynamicResult;
     }
     
@@ -2672,7 +2673,7 @@ async function executeScheduleWiseRequest(
     if (attempt > 0) {
       const delay = Math.pow(2, attempt - 1) * 1000;
       await new Promise((resolve) => setTimeout(resolve, delay));
-      console.log(`[ScheduleWise] node=${nodeId} retry attempt=${attempt} after ${delay}ms`);
+      logger.info(`[ScheduleWise] node=${nodeId} retry attempt=${attempt} after ${delay}ms`);
     }
 
     const controller = new AbortController();
@@ -2767,7 +2768,7 @@ export async function executeNodeLegacy(
     });
   }
 
-  console.log(`[ExecuteNodeLegacy] 🔄 Executing node using legacy executor: ${node.data?.label || node.id} (${type})`);
+  logger.info(`[ExecuteNodeLegacy] 🔄 Executing node using legacy executor: ${node.data?.label || node.id} (${type})`);
 
   // ✅ Helper: Create typed execution context for all nodes
   const createTypedContext = () => {
@@ -2786,7 +2787,7 @@ export async function executeNodeLegacy(
   const configValidation = validationMiddleware.validateConfig(type, normalizedConfig, node.id);
   if (!configValidation.success && configValidation.error) {
     const errorMessage = configValidation.error.message;
-    console.warn(`[Validation] ${errorMessage}`);
+    logger.warn(`[Validation] ${errorMessage}`);
     
       // Single-path strict mode: return error immediately on invalid node config.
       if (require('../core/config').config.reliability.strictValidation) {
@@ -3022,7 +3023,7 @@ export async function executeNodeLegacy(
           operation,
         };
       } catch (error) {
-        console.error('Math node error:', error);
+        logger.error('Math node error:', error);
         return {
           ...inputObj,
           _error: error instanceof Error ? error.message : 'Math operation failed',
@@ -3123,11 +3124,11 @@ export async function executeNodeLegacy(
 
       // ✅ DEBUG: Log input and config to diagnose issues
       if (process.env.DEBUG_DATA_FLOW === 'true') {
-        console.log('[Limit] 🔍 Input keys:', Object.keys(inputObj));
-        console.log('[Limit] 🔍 Input.items:', Array.isArray((inputObj as any).items) ? `Array(${(inputObj as any).items.length})` : (inputObj as any).items);
-        console.log('[Limit] 🔍 Input.array:', (inputObj as any).array);
-        console.log('[Limit] 🔍 Config:', config);
-        console.log('[Limit] 🔍 Config.array:', (config as any).array);
+        logger.info('[Limit] 🔍 Input keys:', Object.keys(inputObj));
+        logger.info('[Limit] 🔍 Input.items:', Array.isArray((inputObj as any).items) ? `Array(${(inputObj as any).items.length})` : (inputObj as any).items);
+        logger.info('[Limit] 🔍 Input.array:', (inputObj as any).array);
+        logger.info('[Limit] 🔍 Config:', config);
+        logger.info('[Limit] 🔍 Config.array:', (config as any).array);
       }
       
       // ✅ FIX: Check config.array first (template expression), then input.items
@@ -3140,13 +3141,13 @@ export async function executeNodeLegacy(
         if (Array.isArray(arrayConfig)) {
           items = arrayConfig;
           if (process.env.DEBUG_DATA_FLOW === 'true') {
-            console.log('[Limit] ✅ Using config.array (direct array)');
+            logger.info('[Limit] ✅ Using config.array (direct array)');
           }
         }
         // If it's a string (template expression or path), try to resolve it
         else if (typeof arrayConfig === 'string') {
           if (process.env.DEBUG_DATA_FLOW === 'true') {
-            console.log('[Limit] 🔄 Resolving template expression:', arrayConfig);
+            logger.info('[Limit] 🔄 Resolving template expression:', arrayConfig);
           }
           
           // Create execution context for template resolution
@@ -3161,7 +3162,7 @@ export async function executeNodeLegacy(
           if (Array.isArray(resolvedArray)) {
             items = resolvedArray;
             if (process.env.DEBUG_DATA_FLOW === 'true') {
-              console.log('[Limit] ✅ Resolved template to array:', resolvedArray.length, 'items');
+              logger.info('[Limit] ✅ Resolved template to array:', resolvedArray.length, 'items');
             }
           }
           // If not resolved, try to get from input using the path
@@ -3171,7 +3172,7 @@ export async function executeNodeLegacy(
             if (Array.isArray(value)) {
               items = value;
               if (process.env.DEBUG_DATA_FLOW === 'true') {
-                console.log('[Limit] ✅ Resolved path to array:', value.length, 'items');
+                logger.info('[Limit] ✅ Resolved path to array:', value.length, 'items');
               }
             }
           }
@@ -3182,7 +3183,7 @@ export async function executeNodeLegacy(
       if (!items) {
         items = Array.isArray((inputObj as any).items) ? (inputObj as any).items : null;
         if (items && process.env.DEBUG_DATA_FLOW === 'true') {
-          console.log('[Limit] ✅ Using input.items:', items.length, 'items');
+          logger.info('[Limit] ✅ Using input.items:', items.length, 'items');
         }
       }
       
@@ -3190,13 +3191,13 @@ export async function executeNodeLegacy(
       if (!items && Array.isArray((inputObj as any).array)) {
         items = (inputObj as any).array;
         if (process.env.DEBUG_DATA_FLOW === 'true' && items) {
-          console.log('[Limit] ✅ Using input.array:', items.length, 'items');
+          logger.info('[Limit] ✅ Using input.array:', items.length, 'items');
         }
       }
       
       if (!items) {
         // Nothing to limit – return input unchanged
-        console.warn('[Limit] ⚠️  No array found in input or config. Input keys:', Object.keys(inputObj), 'Config keys:', Object.keys(config));
+        logger.warn('[Limit] ⚠️  No array found in input or config. Input keys:', Object.keys(inputObj), 'Config keys:', Object.keys(config));
         return inputObj;
       }
 
@@ -3328,12 +3329,12 @@ export async function executeNodeLegacy(
       // Safety cap: don't allow extremely long waits in the worker
       const MAX_WAIT_MS = 5 * 60_000; // 5 minutes
       if (durationMs > MAX_WAIT_MS) {
-        console.warn(`[Wait Node] Duration ${durationMs}ms exceeds max ${MAX_WAIT_MS}ms, capping.`);
+        logger.warn(`[Wait Node] Duration ${durationMs}ms exceeds max ${MAX_WAIT_MS}ms, capping.`);
         durationMs = MAX_WAIT_MS;
       }
 
       if (durationMs > 0) {
-        console.log(`[Wait Node] Pausing execution for ${durationMs}ms`);
+        logger.info(`[Wait Node] Pausing execution for ${durationMs}ms`);
         await new Promise(resolve => setTimeout(resolve, durationMs));
       }
 
@@ -3366,13 +3367,13 @@ export async function executeNodeLegacy(
         // Safety cap: don't allow extremely long delays
         const MAX_DELAY_MS = 10 * 60 * 1000; // 10 minutes
         if (duration > MAX_DELAY_MS) {
-          console.warn(`[Delay Node] Duration ${duration}ms exceeds max ${MAX_DELAY_MS}ms, capping.`);
+          logger.warn(`[Delay Node] Duration ${duration}ms exceeds max ${MAX_DELAY_MS}ms, capping.`);
           duration = MAX_DELAY_MS;
         }
         
         // Wait
         if (duration > 0) {
-          console.log(`[Delay Node] Pausing execution for ${duration}ms`);
+          logger.info(`[Delay Node] Pausing execution for ${duration}ms`);
           await new Promise(resolve => setTimeout(resolve, duration));
         }
         
@@ -3752,7 +3753,7 @@ export async function executeNodeLegacy(
           try {
             await job.moveToCompleted('succeeded', true);
           } catch (ackError: any) {
-            console.warn('[Queue Consume] Failed to acknowledge job:', ackError.message);
+            logger.warn('[Queue Consume] Failed to acknowledge job:', ackError.message);
           }
         }
 
@@ -4011,7 +4012,7 @@ export async function executeNodeLegacy(
           if (needsRefresh && tokenData.refresh_token) {
             // Token refresh logic would go here
             // For now, we'll return the existing token and note that it may be expired
-            console.warn(`[OAuth2 Auth] Token for ${provider} may be expired, but refresh not implemented yet`);
+            logger.warn(`[OAuth2 Auth] Token for ${provider} may be expired, but refresh not implemented yet`);
           }
 
           return {
@@ -4121,7 +4122,7 @@ export async function executeNodeLegacy(
               }
             } catch (vaultError) {
               // If vault retrieval fails, try using the encrypted value directly (might be plain text in dev)
-              console.warn('[API Key Auth] Failed to retrieve from vault, trying encrypted value as-is');
+              logger.warn('[API Key Auth] Failed to retrieve from vault, trying encrypted value as-is');
               apiKey = workflowVaultCredential.encrypted_value;
             }
           }
@@ -5972,7 +5973,7 @@ export async function executeNodeLegacy(
       const temperature = parseFloat(temperatureRaw) || 0.7;
 
       // ✅ DEBUG: Log prompt received from config
-      console.log('[AI Chat Model] 🔍 Prompt received:', {
+      logger.info('[AI Chat Model] 🔍 Prompt received:', {
         nodeId: node.id,
         nodeLabel: node.data?.label,
         promptFromConfig: prompt,
@@ -5989,7 +5990,7 @@ export async function executeNodeLegacy(
           : String(resolveTypedValue(prompt, execContext));
 
       // ✅ DEBUG: Log resolved prompt
-      console.log('[AI Chat Model] 🔍 Resolved prompt:', {
+      logger.info('[AI Chat Model] 🔍 Resolved prompt:', {
         nodeId: node.id,
         resolvedPrompt: resolvedPrompt,
         resolvedPromptLength: resolvedPrompt.length,
@@ -6008,7 +6009,7 @@ export async function executeNodeLegacy(
       }
 
       if (!effectiveUserMessage || effectiveUserMessage.trim() === '') {
-        console.error('[AI Chat Model] ❌ ERROR: Prompt is empty or missing', {
+        logger.error('[AI Chat Model] ❌ ERROR: Prompt is empty or missing', {
           nodeId: node.id,
           nodeLabel: node.data?.label,
           promptFromConfig: prompt,
@@ -6223,8 +6224,8 @@ export async function executeNodeLegacy(
         (useFalRun ? 'https://queue.fal.run/fal-ai/veo3' : 'https://generativelanguage.googleapis.com/v1beta/models/veo-3/jobs');
 
       // Step 1: Start video generation job
-      console.log(`[Google Veo] Starting video generation job using ${useFalRun ? 'Fal.run' : 'Google AI Studio'}...`);
-      console.log(`[Google Veo] Endpoint: ${GENERATE_ENDPOINT}`);
+      logger.info(`[Google Veo] Starting video generation job using ${useFalRun ? 'Fal.run' : 'Google AI Studio'}...`);
+      logger.info(`[Google Veo] Endpoint: ${GENERATE_ENDPOINT}`);
       
       // Prepare request body based on provider
       let requestBody: any;
@@ -6242,8 +6243,8 @@ export async function executeNodeLegacy(
         const actualDuration = Math.min(duration, maxDuration);
         
         if (duration > maxDuration) {
-          console.warn(`[Google Veo] Duration ${duration}s exceeds Veo3 maximum of ${maxDuration}s. Using ${maxDuration}s instead.`);
-          console.warn(`[Google Veo] To create longer videos, generate multiple 8-second segments and combine them.`);
+          logger.warn(`[Google Veo] Duration ${duration}s exceeds Veo3 maximum of ${maxDuration}s. Using ${maxDuration}s instead.`);
+          logger.warn(`[Google Veo] To create longer videos, generate multiple 8-second segments and combine them.`);
         }
         
         // Use Authorization header
@@ -6306,7 +6307,7 @@ export async function executeNodeLegacy(
       const generateResult = await generateResponse.json() as any;
       
       // Log the full response for debugging
-      console.log('[Google Veo] API Response:', JSON.stringify(generateResult, null, 2));
+      logger.info('[Google Veo] API Response:', JSON.stringify(generateResult, null, 2));
       
       // Check if Fal.ai returned the video directly (synchronous response)
       // Fal.ai veo3 often returns video immediately without async job
@@ -6318,7 +6319,7 @@ export async function executeNodeLegacy(
       
       if (directVideoUrl) {
         // Video returned immediately - no polling needed
-        console.log('[Google Veo] Video generated synchronously, returning immediately');
+        logger.info('[Google Veo] Video generated synchronously, returning immediately');
         return {
           videoUrl: directVideoUrl,
           jobId: 'synchronous',
@@ -6342,7 +6343,7 @@ export async function executeNodeLegacy(
         // Check if there's a video URL in the response (some formats)
         if (generateResult.video?.url || generateResult.url) {
           const videoUrl = generateResult.video?.url || generateResult.url;
-          console.log('[Google Veo] Video found in response, returning immediately');
+          logger.info('[Google Veo] Video found in response, returning immediately');
           return {
             videoUrl,
             jobId: 'immediate',
@@ -6357,7 +6358,7 @@ export async function executeNodeLegacy(
         throw new Error(`Failed to get job ID from API response. Response: ${responseStr}\n\n💡 TIP: Check if the API response format matches expected format. For Fal.ai, the job ID might be in a different field, or the video might be returned directly.`);
       }
 
-      console.log(`[Google Veo] Job started with ID: ${jobId}`);
+      logger.info(`[Google Veo] Job started with ID: ${jobId}`);
 
       // Step 2: Poll for completion
       const startTime = Date.now();
@@ -6411,7 +6412,7 @@ export async function executeNodeLegacy(
         const statusResult = await statusResponse.json() as any;
         
         // Log status response for debugging
-        console.log(`[Google Veo] Status Response for ${jobId}:`, JSON.stringify(statusResult, null, 2));
+        logger.info(`[Google Veo] Status Response for ${jobId}:`, JSON.stringify(statusResult, null, 2));
         
         // Extract status from various possible formats
         const statusResultTyped = {
@@ -6453,7 +6454,7 @@ export async function executeNodeLegacy(
         }
         finalStatus = status;
 
-        console.log(`[Google Veo] Job ${jobId} status: ${status}`);
+        logger.info(`[Google Veo] Job ${jobId} status: ${status}`);
 
         if (status === 'completed' || status === 'success' || status === 'COMPLETED') {
           // Handle different response formats
@@ -6497,7 +6498,7 @@ export async function executeNodeLegacy(
         throw new Error(`Video generation did not complete. Final status: ${finalStatus}`);
       }
 
-      console.log(`[Google Veo] Video generation completed. URL: ${videoUrl}`);
+      logger.info(`[Google Veo] Video generation completed. URL: ${videoUrl}`);
 
       // Step 3: Return result
       return {
@@ -6528,7 +6529,7 @@ export async function executeNodeLegacy(
           isChatbotWorkflow = nodes.some((n: any) => n.type === 'chat_trigger' || n.data?.type === 'chat_trigger');
         }
       } catch (error) {
-        console.warn('[AI Agent] Could not check workflow structure for chatbot detection:', error);
+        logger.warn('[AI Agent] Could not check workflow structure for chatbot detection:', error);
       }
       
       // CRITICAL: Check if this is a chatbot workflow by looking at the system prompt OR workflow structure
@@ -6552,7 +6553,7 @@ export async function executeNodeLegacy(
           'Example: If user says "Hello", respond with "Hi! How can I help you today?" NOT with explanations about workflows or JSON structures.';
         
         if (isChatbotWorkflow && !configSystemPrompt) {
-          console.log('[AI Agent] ✅ Chatbot workflow detected at runtime - applying chatbot system prompt');
+          logger.info('[AI Agent] ✅ Chatbot workflow detected at runtime - applying chatbot system prompt');
         }
       }
       
@@ -6586,27 +6587,27 @@ export async function executeNodeLegacy(
         
         // Priority 1: Check if it's a chat trigger output (has 'message' field)
         if (userInputObj.message && typeof userInputObj.message === 'string') {
-          console.log(`[AI Agent] ✅ Extracted message from userInput.message: "${userInputObj.message}"`);
+          logger.info(`[AI Agent] ✅ Extracted message from userInput.message: "${userInputObj.message}"`);
           userInput = userInputObj.message;
         }
         // Priority 2: Check for other common message field names
         else if (userInputObj.text && typeof userInputObj.text === 'string') {
-          console.log(`[AI Agent] ✅ Extracted text from userInput.text: "${userInputObj.text}"`);
+          logger.info(`[AI Agent] ✅ Extracted text from userInput.text: "${userInputObj.text}"`);
           userInput = userInputObj.text;
         }
         // Priority 3: If it's an object but no message field, try to extract meaningful text
         else if (userInputObj.userInput && typeof userInputObj.userInput === 'string') {
-          console.log(`[AI Agent] ✅ Extracted userInput from nested object: "${userInputObj.userInput}"`);
+          logger.info(`[AI Agent] ✅ Extracted userInput from nested object: "${userInputObj.userInput}"`);
           userInput = userInputObj.userInput;
         }
         // Priority 4: If still an object, try to find any string field that might be the message
         else {
-          console.warn(`[AI Agent] ⚠️ userInput is an object but no message field found. Keys: ${Object.keys(userInputObj).join(', ')}`);
+          logger.warn(`[AI Agent] ⚠️ userInput is an object but no message field found. Keys: ${Object.keys(userInputObj).join(', ')}`);
           // Try to find any string field that might be the message
           let found = false;
           for (const key of ['message', 'text', 'input', 'content', 'query', 'prompt', 'userInput']) {
             if (userInputObj[key] && typeof userInputObj[key] === 'string') {
-              console.log(`[AI Agent] ✅ Found message in field "${key}": "${userInputObj[key]}"`);
+              logger.info(`[AI Agent] ✅ Found message in field "${key}": "${userInputObj[key]}"`);
               userInput = userInputObj[key];
               found = true;
               break;
@@ -6615,11 +6616,11 @@ export async function executeNodeLegacy(
           
           // If still not found and this is a chatbot workflow, try to extract from nested objects
           if (!found && isChatbotWorkflow) {
-            console.warn(`[AI Agent] ⚠️ Could not extract message from userInput object. Original:`, JSON.stringify(originalUserInput).substring(0, 200));
+            logger.warn(`[AI Agent] ⚠️ Could not extract message from userInput object. Original:`, JSON.stringify(originalUserInput).substring(0, 200));
             // Last resort: if it's a chatbot and we can't find the message, use the first string value
             for (const key in userInputObj) {
               if (typeof userInputObj[key] === 'string' && userInputObj[key].length > 0) {
-                console.log(`[AI Agent] ✅ Using first string field "${key}" as message: "${userInputObj[key]}"`);
+                logger.info(`[AI Agent] ✅ Using first string field "${key}" as message: "${userInputObj[key]}"`);
                 userInput = userInputObj[key];
                 found = true;
                 break;
@@ -6631,7 +6632,7 @@ export async function executeNodeLegacy(
       
       // Final check: ensure userInput is a string
       if (typeof userInput !== 'string') {
-        console.warn(`[AI Agent] userInput is not a string after extraction: ${typeof userInput}. Converting to string.`);
+        logger.warn(`[AI Agent] userInput is not a string after extraction: ${typeof userInput}. Converting to string.`);
         userInput = typeof userInput === 'object' ? JSON.stringify(userInput) : String(userInput);
       }
       
@@ -6690,14 +6691,14 @@ export async function executeNodeLegacy(
       
       // Add user input - should already be extracted to just the message text
       // Log what we're sending to help debug
-      console.log(`[AI Agent] Final userInput before sending to LLM:`, 
+      logger.info(`[AI Agent] Final userInput before sending to LLM:`, 
         typeof userInput === 'string' ? userInput : JSON.stringify(userInput).substring(0, 200));
       
       const userInputStr = typeof userInput === 'string' ? userInput : JSON.stringify(userInput);
       messages.push({ role: 'user', content: userInputStr });
       
       // Log the full message array for debugging (truncated)
-      console.log(`[AI Agent] Full messages array being sent to LLM:`, 
+      logger.info(`[AI Agent] Full messages array being sent to LLM:`, 
         messages.map(m => ({
           role: m.role,
           content: m.content.substring(0, 200) + (m.content.length > 200 ? '...' : '')
@@ -6819,7 +6820,7 @@ export async function executeNodeLegacy(
           // In a full implementation, this would use the memory service
           formattedOutput.memory_written = true;
         } catch (error) {
-          console.error('Failed to write memory:', error);
+          logger.error('Failed to write memory:', error);
         }
       }
       
@@ -6842,7 +6843,7 @@ export async function executeNodeLegacy(
               if (outputObj.sessionId && typeof outputObj.sessionId === 'string') {
                 chatSessionId = outputObj.sessionId;
                 chatTriggerNodeId = nodeId;
-                console.log(`[AI Agent] ✅ Found sessionId from chat_trigger node ${nodeId}: ${chatSessionId}`);
+                logger.info(`[AI Agent] ✅ Found sessionId from chat_trigger node ${nodeId}: ${chatSessionId}`);
                 break;
               }
             }
@@ -6857,7 +6858,7 @@ export async function executeNodeLegacy(
               if (inputObjAny.node_id) {
                 chatTriggerNodeId = inputObjAny.node_id;
               }
-              console.log(`[AI Agent] ✅ Found sessionId from inputObj: ${chatSessionId}`);
+              logger.info(`[AI Agent] ✅ Found sessionId from inputObj: ${chatSessionId}`);
             }
           }
           
@@ -6877,11 +6878,11 @@ export async function executeNodeLegacy(
                 if (inputObjAny.workflow_id && inputObjAny.node_id) {
                   chatSessionId = `${inputObjAny.workflow_id}_${inputObjAny.node_id}`;
                   chatTriggerNodeId = inputObjAny.node_id;
-                  console.log(`[AI Agent] ✅ Constructed sessionId using static format: ${chatSessionId}`);
+                  logger.info(`[AI Agent] ✅ Constructed sessionId using static format: ${chatSessionId}`);
                 }
               }
             } catch (err) {
-              console.warn('[AI Agent] Could not construct sessionId from input:', err);
+              logger.warn('[AI Agent] Could not construct sessionId from input:', err);
             }
           }
           
@@ -6897,28 +6898,28 @@ export async function executeNodeLegacy(
               });
               
               if (sent) {
-                console.log(`[AI Agent] ✅ Auto-sent response to chat UI (sessionId: ${chatSessionId}): ${formattedOutput.response_text.substring(0, 100)}...`);
+                logger.info(`[AI Agent] ✅ Auto-sent response to chat UI (sessionId: ${chatSessionId}): ${formattedOutput.response_text.substring(0, 100)}...`);
                 // Add metadata to output
                 formattedOutput._chatSent = true;
                 formattedOutput._chatSessionId = chatSessionId;
               } else {
-                console.warn(`[AI Agent] ⚠️ Failed to send response to chat UI. Session ${chatSessionId} may not be connected.`);
+                logger.warn(`[AI Agent] ⚠️ Failed to send response to chat UI. Session ${chatSessionId} may not be connected.`);
               }
             } catch (chatError: any) {
-              console.error('[AI Agent] Error sending response to chat UI:', chatError?.message || chatError);
+              logger.error('[AI Agent] Error sending response to chat UI:', chatError?.message || chatError);
               // Don't fail the node execution if chat sending fails
             }
           } else {
             if (!chatSessionId) {
-              console.warn('[AI Agent] ⚠️ Chatbot workflow detected but no sessionId found. Cannot auto-send to chat UI.');
-              console.warn('[AI Agent] Input object keys:', inputObj && typeof inputObj === 'object' ? Object.keys(inputObj) : 'N/A');
+              logger.warn('[AI Agent] ⚠️ Chatbot workflow detected but no sessionId found. Cannot auto-send to chat UI.');
+              logger.warn('[AI Agent] Input object keys:', inputObj && typeof inputObj === 'object' ? Object.keys(inputObj) : 'N/A');
             }
             if (!formattedOutput.response_text) {
-              console.warn('[AI Agent] ⚠️ No response_text in AI agent output to send to chat UI.');
+              logger.warn('[AI Agent] ⚠️ No response_text in AI agent output to send to chat UI.');
             }
           }
         } catch (error: any) {
-          console.error('[AI Agent] Error in auto-chat sending logic:', error?.message || error);
+          logger.error('[AI Agent] Error in auto-chat sending logic:', error?.message || error);
           // Don't fail the node execution if chat sending fails
         }
       }
@@ -7080,14 +7081,14 @@ export async function executeNodeLegacy(
         if (typeof bodyJson === 'object' && bodyJson !== null && !Array.isArray(bodyJson)) {
           // Already an object - stringify directly (no template resolution needed for objects)
           body = JSON.stringify(bodyJson);
-          console.log('[HTTP Request] ✅ Body is object, stringifying:', JSON.stringify(bodyJson).substring(0, 200));
+          logger.info('[HTTP Request] ✅ Body is object, stringifying:', JSON.stringify(bodyJson).substring(0, 200));
         } else {
           // String or other type - resolve templates first
           const resolvedBodyRaw = resolveTypedValue(bodyJson, execContext);
           if (typeof resolvedBodyRaw === 'object' && resolvedBodyRaw !== null) {
             // Resolved to object - stringify
             body = JSON.stringify(resolvedBodyRaw);
-            console.log('[HTTP Request] ✅ Body resolved to object, stringifying:', JSON.stringify(resolvedBodyRaw).substring(0, 200));
+            logger.info('[HTTP Request] ✅ Body resolved to object, stringifying:', JSON.stringify(resolvedBodyRaw).substring(0, 200));
           } else {
             // Resolved to string - try to parse as JSON, then stringify
             const resolvedBody = String(resolvedBodyRaw);
@@ -7098,17 +7099,17 @@ export async function executeNodeLegacy(
                 // Try to parse as JSON first
                 const parsed = JSON.parse(resolvedBody);
                 body = JSON.stringify(parsed);
-                console.log('[HTTP Request] ✅ Body parsed from JSON string:', JSON.stringify(parsed).substring(0, 200));
+                logger.info('[HTTP Request] ✅ Body parsed from JSON string:', JSON.stringify(parsed).substring(0, 200));
               } catch {
                 // Not valid JSON - use as plain string
                 body = resolvedBody;
-                console.log('[HTTP Request] ⚠️ Body is plain string (not JSON):', resolvedBody.substring(0, 200));
+                logger.info('[HTTP Request] ⚠️ Body is plain string (not JSON):', resolvedBody.substring(0, 200));
               }
             }
           }
         }
       } else {
-        console.log('[HTTP Request] ⚠️ Body not sent - method:', method, 'bodyJson:', bodyJson ? 'exists' : 'empty');
+        logger.info('[HTTP Request] ⚠️ Body not sent - method:', method, 'bodyJson:', bodyJson ? 'exists' : 'empty');
       }
 
       try {
@@ -7120,7 +7121,7 @@ export async function executeNodeLegacy(
           await rateLimitManager.waitForLimit('http_request');
         } catch (e) {
           // Non-fatal: if reliability layer deps aren't available, proceed without throttling
-          console.warn('[http_request] Rate limiter unavailable (non-fatal):', e instanceof Error ? e.message : String(e));
+          logger.warn('[http_request] Rate limiter unavailable (non-fatal):', e instanceof Error ? e.message : String(e));
         }
 
         const controller = new AbortController();
@@ -7149,7 +7150,7 @@ export async function executeNodeLegacy(
           acknowledgementStatus: acknowledgedResponse.acknowledgementStatus,
         };
       } catch (error) {
-        console.error('[HTTP Request] ❌ Fetch error:', error);
+        logger.error('[HTTP Request] ❌ Fetch error:', error);
         
         // ✅ ENHANCED: Provide detailed error messages for common issues
         let errorMessage = 'HTTP Request failed';
@@ -7284,7 +7285,7 @@ export async function executeNodeLegacy(
           code = resolveUniversalTemplate(code, nodeOutputs);
           if (typeof code !== 'string') code = String(code ?? '');
         } catch (resolveErr) {
-          console.warn('[ExecuteNodeLegacy] Template resolution in JavaScript code failed (non-fatal):', resolveErr);
+          logger.warn('[ExecuteNodeLegacy] Template resolution in JavaScript code failed (non-fatal):', resolveErr);
         }
       }
 
@@ -7329,21 +7330,21 @@ export async function executeNodeLegacy(
             if (schema.type) {
               const actualType = typeof result;
               if (schema.type !== actualType && !(schema.type === 'array' && Array.isArray(result))) {
-                console.warn(`[JavaScript Node] Output type mismatch: expected ${schema.type}, got ${actualType}`);
+                logger.warn(`[JavaScript Node] Output type mismatch: expected ${schema.type}, got ${actualType}`);
               }
             }
           } catch { /* invalid schema — skip validation */ }
         }
 
-        console.log(`[Security] JavaScript node executed successfully (timeout: ${safeTimeout}ms)`);
+        logger.info(`[Security] JavaScript node executed successfully (timeout: ${safeTimeout}ms)`);
         return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (errorMessage.includes('timeout') || errorMessage.includes('Script execution timed out')) {
-          console.error('[Security] JavaScript node execution timed out');
+          logger.error('[Security] JavaScript node execution timed out');
           return { ...inputObj, _error: `Execution timeout: Code exceeded ${safeTimeout}ms execution limit` };
         }
-        console.error('JavaScript execution error:', error);
+        logger.error('JavaScript execution error:', error);
         return { ...inputObj, _error: errorMessage };
       }
     }
@@ -7394,15 +7395,15 @@ export async function executeNodeLegacy(
           label: 'Function Node',
         });
 
-        console.log(`[Security] Function node executed successfully (timeout: ${safeTimeout}ms)`);
+        logger.info(`[Security] Function node executed successfully (timeout: ${safeTimeout}ms)`);
         return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (errorMessage.includes('timeout') || errorMessage.includes('Script execution timed out')) {
-          console.error('[Security] Function node execution timed out');
+          logger.error('[Security] Function node execution timed out');
           return { ...inputObj, _error: `Execution timeout: Code exceeded ${safeTimeout}ms execution limit` };
         }
-        console.error('Function execution error:', error);
+        logger.error('Function execution error:', error);
         return { ...inputObj, _error: errorMessage };
       }
     }
@@ -7483,7 +7484,7 @@ export async function executeNodeLegacy(
       const execContext = createTypedContext();
       
       // ✅ DEBUG: Log original config values BEFORE resolution
-      console.log(`[Google Sheets] Original config (before resolution):`, {
+      logger.info(`[Google Sheets] Original config (before resolution):`, {
         spreadsheetId: spreadsheetId?.substring(0, 50),
         sheetName: sheetName,
         range: range,
@@ -7499,7 +7500,7 @@ export async function executeNodeLegacy(
       const resolvedRange = range ? resolveConfigString(range) : '';
       
       // ✅ DEBUG: Log resolved values AFTER resolution
-      console.log(`[Google Sheets] Resolved config (after resolution):`, {
+      logger.info(`[Google Sheets] Resolved config (after resolution):`, {
         spreadsheetId: resolvedSpreadsheetId?.substring(0, 50),
         sheetName: resolvedSheetName,
         range: resolvedRange,
@@ -7507,7 +7508,7 @@ export async function executeNodeLegacy(
       
       // ✅ VALIDATION: Check if spreadsheet ID was changed by template resolution
       if (spreadsheetId && spreadsheetId.trim() !== '' && resolvedSpreadsheetId !== spreadsheetId.trim()) {
-        console.warn(`[Google Sheets] ⚠️  Spreadsheet ID was changed by template resolution!`, {
+        logger.warn(`[Google Sheets] ⚠️  Spreadsheet ID was changed by template resolution!`, {
           original: spreadsheetId.substring(0, 50),
           resolved: resolvedSpreadsheetId.substring(0, 50),
         });
@@ -7579,13 +7580,13 @@ export async function executeNodeLegacy(
         const encodedRange = encodeURIComponent(rangeParam);
         const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${resolvedSpreadsheetId}/values/${encodedRange}`;
         
-        console.log(`[Google Sheets] Config values:`, {
+        logger.info(`[Google Sheets] Config values:`, {
           sheetName: resolvedSheetName,
           range: resolvedRange,
           rangeParam: rangeParam,
           encodedRange: encodedRange,
         });
-        console.log(`[Google Sheets] API URL: ${apiUrl}`);
+        logger.info(`[Google Sheets] API URL: ${apiUrl}`);
 
         if (operation === 'read') {
           const readDirection = getStringProperty(config, 'readDirection', 'rows').toLowerCase() === 'columns'
@@ -7772,7 +7773,7 @@ export async function executeNodeLegacy(
         const isConfigError = errorMessage.includes('credentials') || errorMessage.includes('authenticate') || errorMessage.includes('OAuth');
         
         if (!isConfigError) {
-          console.error('Google Sheets error:', error);
+          logger.error('Google Sheets error:', error);
         }
         
         // ✅ CLEAN OUTPUT: Don't include config values in error output
@@ -8067,7 +8068,7 @@ export async function executeNodeLegacy(
         const isConfigError = errorMessage.includes('credentials') || errorMessage.includes('authenticate') || errorMessage.includes('OAuth');
         
         if (!isConfigError) {
-          console.error('Google Docs error:', error);
+          logger.error('Google Docs error:', error);
         }
         
         return {
@@ -8631,7 +8632,7 @@ export async function executeNodeLegacy(
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Airtable operation failed';
-        console.error('Airtable error:', error);
+        logger.error('Airtable error:', error);
         
         // Extract Airtable-specific error details if available
         let statusCode: number | undefined;
@@ -9505,7 +9506,7 @@ export async function executeNodeLegacy(
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Pipedrive operation failed';
-        console.error('Pipedrive error:', error);
+        logger.error('Pipedrive error:', error);
 
         return {
           ...inputObj,
@@ -10029,7 +10030,7 @@ export async function executeNodeLegacy(
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : 'Notion operation failed';
         const statusCode = error?.status || error?.code || 'unknown';
-        console.error('Notion error:', error);
+        logger.error('Notion error:', error);
 
         return {
           ...inputObj,
@@ -10905,7 +10906,7 @@ export async function executeNodeLegacy(
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : 'Twitter operation failed';
         const statusCode = error?.status || error?.code || 'unknown';
-        console.error('Twitter error:', error);
+        logger.error('Twitter error:', error);
 
         return {
           ...inputObj,
@@ -11644,7 +11645,7 @@ export async function executeNodeLegacy(
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : 'Instagram operation failed';
         const statusCode = error?.status || error?.code || 'unknown';
-        console.error('Instagram error:', error);
+        logger.error('Instagram error:', error);
 
         return {
           ...inputObj,
@@ -12396,7 +12397,7 @@ export async function executeNodeLegacy(
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : 'WhatsApp operation failed';
         const statusCode = error?.status || error?.code || 'unknown';
-        console.error('WhatsApp error:', error);
+        logger.error('WhatsApp error:', error);
 
         return {
           ...inputObj,
@@ -12535,7 +12536,7 @@ export async function executeNodeLegacy(
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : 'Google Calendar operation failed';
         const statusCode = error?.response?.status || error?.code || 'unknown';
-        console.error('Google Calendar error:', error);
+        logger.error('Google Calendar error:', error);
 
         return {
           ...inputObj,
@@ -12603,7 +12604,7 @@ export async function executeNodeLegacy(
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        console.error(`[${provider} Node] Error:`, error);
+        logger.error(`[${provider} Node] Error:`, error);
         return {
           ...inputObj,
           _error: `${provider} node: ${errorMessage}`,
@@ -12714,7 +12715,7 @@ export async function executeNodeLegacy(
           try {
             personUrn = await getPersonUrnFromToken(accessToken);
           } catch (err) {
-            console.warn('[LinkedIn Node] Could not fetch personUrn from token:', err);
+            logger.warn('[LinkedIn Node] Could not fetch personUrn from token:', err);
           }
         }
 
@@ -12914,7 +12915,7 @@ export async function executeNodeLegacy(
                   visibility
                 );
 
-                console.log('[LinkedIn Node] Media post succeeded.', {
+                logger.info('[LinkedIn Node] Media post succeeded.', {
                   postId: result.id,
                   visibility,
                   kind,
@@ -12934,7 +12935,7 @@ export async function executeNodeLegacy(
                 if (message.includes('401') || message.includes('403')) {
                   const authMsg =
                     'LinkedIn authorization failed for media post. Check that w_member_social is granted and mediaUrl is publicly accessible.';
-                  console.error('[LinkedIn Node] Media authorization error.', {
+                  logger.error('[LinkedIn Node] Media authorization error.', {
                     message,
                   });
                   return {
@@ -12946,7 +12947,7 @@ export async function executeNodeLegacy(
                   };
                 }
 
-                console.error('[LinkedIn Node] Media post failed.', { message });
+                logger.error('[LinkedIn Node] Media post failed.', { message });
                 return {
                   ...inputObj,
                   _error: `LinkedIn media post failed: ${message}`,
@@ -12969,7 +12970,7 @@ export async function executeNodeLegacy(
                   resolvedText,
                   visibility
                 );
-                console.log('[LinkedIn Node] Post succeeded.', {
+                logger.info('[LinkedIn Node] Post succeeded.', {
                   postId: result.id,
                   visibility,
                 });
@@ -12984,7 +12985,7 @@ export async function executeNodeLegacy(
                 // Handle rate limiting
                 if (err.message?.includes('429') && attempt < maxRetries) {
                   const delayMs = attempt * 1000;
-                  console.warn(
+                  logger.warn(
                     '[LinkedIn Node] Rate limited (429). Retrying with backoff.',
                     {
                       attempt,
@@ -12999,7 +13000,7 @@ export async function executeNodeLegacy(
                 if (err.message?.includes('401') || err.message?.includes('403')) {
                   const message =
                     'LinkedIn authorization failed. Check that required permissions (openid, profile, email, w_member_social) are granted.';
-                  console.error('[LinkedIn Node] Authorization error.', {
+                  logger.error('[LinkedIn Node] Authorization error.', {
                     message: err.message,
                   });
                   return {
@@ -13123,7 +13124,7 @@ export async function executeNodeLegacy(
             };
         }
       } catch (err) {
-        console.error('[LinkedIn Node] Unexpected error:', err);
+        logger.error('[LinkedIn Node] Unexpected error:', err);
         return {
           ...inputObj,
           _error: err instanceof Error
@@ -13257,7 +13258,7 @@ export async function executeNodeLegacy(
             if (caseMatch) {
               matchedCase = caseMatch.value;
               recoveredViaField = candidate;
-              console.log(`[Switch] Expression '${expression}' resolved to empty — recovered case '${matchedCase}' via field '${candidate}'`);
+              logger.info(`[Switch] Expression '${expression}' resolved to empty — recovered case '${matchedCase}' via field '${candidate}'`);
               break;
             }
           }
@@ -13287,7 +13288,7 @@ export async function executeNodeLegacy(
       // Uses typed execution context and condition evaluator for proper type handling
       
       // ✅ CRITICAL DEBUG: Log raw input to understand what we're receiving
-      console.log('[If/Else] 🔍 RAW INPUT RECEIVED:', {
+      logger.info('[If/Else] 🔍 RAW INPUT RECEIVED:', {
         inputType: typeof input,
         isObject: typeof input === 'object' && input !== null && !Array.isArray(input),
         inputKeys: typeof input === 'object' && input !== null && !Array.isArray(input)
@@ -13319,7 +13320,7 @@ export async function executeNodeLegacy(
         : extractInputObject(input);
       
       // ✅ CRITICAL DEBUG: Log originalInputObj after extraction
-      console.log('[If/Else] 🔍 ORIGINAL INPUT OBJ:', {
+      logger.info('[If/Else] 🔍 ORIGINAL INPUT OBJ:', {
         keys: Object.keys(originalInputObj),
         hasItems: 'items' in originalInputObj,
         itemsLength: Array.isArray(originalInputObj.items) ? originalInputObj.items.length : 'N/A',
@@ -13341,7 +13342,7 @@ export async function executeNodeLegacy(
       delete filteredInput.output;
       
       // ✅ DEBUG: Log input filtering to diagnose issues
-      console.log('[If/Else] 🔍 FILTERED INPUT:', {
+      logger.info('[If/Else] 🔍 FILTERED INPUT:', {
         originalInputKeys: Object.keys(originalInputObj),
         filteredInputKeys: Object.keys(filteredInput),
         hasItems: 'items' in filteredInput,
@@ -13382,7 +13383,7 @@ export async function executeNodeLegacy(
       
       // ✅ DEBUG: Log context setup for condition evaluation
       if (process.env.DEBUG_DATA_FLOW === 'true') {
-        console.log('[If/Else] Context setup:', {
+        logger.info('[If/Else] Context setup:', {
           hasItems: 'items' in mergedInput,
           itemsIsArray: Array.isArray((mergedInput as any).items),
           itemsLength: Array.isArray((mergedInput as any).items) ? (mergedInput as any).items.length : 'N/A',
@@ -13399,7 +13400,7 @@ export async function executeNodeLegacy(
       const normalizedConditions = normalizeIfElseConditionsCanonical(sourceConditions ?? sourceCondition);
       const canonicalErrors = validateCanonicalIfElseConditions(normalizedConditions);
       if (canonicalErrors.length > 0) {
-        console.warn('[If/Else] Canonical condition validation failed:', canonicalErrors);
+        logger.warn('[If/Else] Canonical condition validation failed:', canonicalErrors);
       }
 
       if (normalizedConditions.length > 0) {
@@ -13412,7 +13413,7 @@ export async function executeNodeLegacy(
       }
       
       if (!condition) {
-        console.warn('[If/Else] Condition is empty, defaulting to false');
+        logger.warn('[If/Else] Condition is empty, defaulting to false');
         const result = false;
         return {
           ...inputObj,
@@ -13426,7 +13427,7 @@ export async function executeNodeLegacy(
       let conditionResult: boolean;
       try {
         // ✅ DEBUG: Log condition evaluation details
-        console.log('[If/Else] 🔍 Condition evaluation:', {
+        logger.info('[If/Else] 🔍 Condition evaluation:', {
           nodeId: node.id,
           nodeLabel: node.data?.label,
           condition: typeof condition === 'string' ? condition : JSON.stringify(condition),
@@ -13446,7 +13447,7 @@ export async function executeNodeLegacy(
         conditionResult = evaluateCondition(condition, execContext);
         
         // ✅ DEBUG: Log result with detailed context
-        console.log('[If/Else] ✅ Condition result:', {
+        logger.info('[If/Else] ✅ Condition result:', {
           nodeId: node.id,
           condition: typeof condition === 'string' ? condition : JSON.stringify(condition),
           result: conditionResult,
@@ -13456,7 +13457,7 @@ export async function executeNodeLegacy(
             : 'N/A',
         });
       } catch (error) {
-        console.error('[If/Else] ❌ Error evaluating condition:', error);
+        logger.error('[If/Else] ❌ Error evaluating condition:', error);
         conditionResult = false;
       }
       
@@ -13480,7 +13481,7 @@ export async function executeNodeLegacy(
       
       // ✅ DEBUG: Log to help diagnose data flow issues
       if (process.env.DEBUG_DATA_FLOW === 'true') {
-        console.log('[If/Else] 🔍 Data forwarding check:', {
+        logger.info('[If/Else] 🔍 Data forwarding check:', {
           inputType: typeof input,
           inputIsObject: typeof input === 'object' && input !== null,
           inputKeys: typeof input === 'object' && input !== null ? Object.keys(input as Record<string, unknown>) : [],
@@ -13580,7 +13581,7 @@ export async function executeNodeLegacy(
           sentAt: new Date().toISOString(),
         };
       } catch (error) {
-        console.error('[Chat Send] Error sending message:', error);
+        logger.error('[Chat Send] Error sending message:', error);
         return {
           id: resolvedSessionId || '',
           status: 'failed' as const,
@@ -13660,12 +13661,12 @@ export async function executeNodeLegacy(
         );
         
         if (!hasRequiredScopes && scopes.length > 0) {
-          console.warn(`[GmailNode] ⚠️ Missing required Gmail scopes. Found: ${scopes.join(', ')}. Required: ${REQUIRED_GMAIL_SCOPES.join(' or ')}. Execution will proceed but may fail.`);
+          logger.warn(`[GmailNode] ⚠️ Missing required Gmail scopes. Found: ${scopes.join(', ')}. Required: ${REQUIRED_GMAIL_SCOPES.join(' or ')}. Execution will proceed but may fail.`);
         } else if (!hasRequiredScopes) {
-          console.warn(`[GmailNode] ⚠️ No scopes found in token. Execution will proceed but may fail.`);
+          logger.warn(`[GmailNode] ⚠️ No scopes found in token. Execution will proceed but may fail.`);
         }
         
-        console.log(`[GmailNode] Using access token to send mail (operation: ${operation})`);
+        logger.info(`[GmailNode] Using access token to send mail (operation: ${operation})`);
         
         // Execute operation
         if (operation === 'send') {
@@ -13788,7 +13789,7 @@ export async function executeNodeLegacy(
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Gmail operation failed';
-        console.error('[GmailNode] Error:', error);
+        logger.error('[GmailNode] Error:', error);
         
         // Map common errors
         if (errorMessage.includes('401') || errorMessage.includes('unauthorized') || errorMessage.includes('invalid_token')) {
@@ -13893,7 +13894,7 @@ export async function executeNodeLegacy(
             }
           }
         } catch (error) {
-          console.warn('[Slack Message] Failed to parse blocks JSON, using empty blocks:', error);
+          logger.warn('[Slack Message] Failed to parse blocks JSON, using empty blocks:', error);
           blocks = [];
         }
       }
@@ -13944,7 +13945,7 @@ export async function executeNodeLegacy(
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Slack message failed';
-        console.error('[Slack Message] Error:', error);
+        logger.error('[Slack Message] Error:', error);
         // Return error result object
         return {
           id: '',
@@ -14024,7 +14025,7 @@ export async function executeNodeLegacy(
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Slack webhook failed';
-        console.error('[Slack Webhook] Error:', error);
+        logger.error('[Slack Webhook] Error:', error);
         return {
           id: '',
           status: 'failed' as const,
@@ -15328,7 +15329,7 @@ export async function executeNodeLegacy(
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Zoho operation failed';
-        console.error('[Zoho Node] Error:', error);
+        logger.error('[Zoho Node] Error:', error);
         
         return {
           ...inputObj,
@@ -15630,7 +15631,7 @@ export async function executeNodeLegacy(
         result = dbResult.data || dbResult;
       } catch (error: any) {
         const errorMessage = error.message || 'Database operation failed';
-        console.error(`[Database Node ${type}] Error:`, error);
+        logger.error(`[Database Node ${type}] Error:`, error);
         return {
           ...inputObj,
           _error: `Database node error: ${errorMessage}`,
@@ -15836,7 +15837,7 @@ export async function executeNodeLegacy(
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Microsoft Dynamics operation failed';
-        console.error('[MicrosoftDynamicsNode] Error:', error);
+        logger.error('[MicrosoftDynamicsNode] Error:', error);
         return {
           ...inputObj,
           _error: `Microsoft Dynamics: ${errorMessage}`,
@@ -15975,7 +15976,7 @@ export async function executeNodeLegacy(
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'SAP operation failed';
-        console.error('[SapNode] Error:', error);
+        logger.error('[SapNode] Error:', error);
         return {
           ...inputObj,
           _error: `SAP: ${errorMessage}`,
@@ -16121,7 +16122,7 @@ export async function executeNodeLegacy(
         };
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : 'Tally operation failed';
-        console.error('[TallyNode] Error:', error);
+        logger.error('[TallyNode] Error:', error);
         return {
           ...inputObj,
           _error: `Tally: ${errMsg}`,
@@ -16207,7 +16208,7 @@ export async function executeNodeLegacy(
       
       // Validate token format (Private App tokens start with 'pat-', API keys are different)
       if (accessToken && !accessToken.startsWith('pat-') && !accessToken.startsWith('Bearer ')) {
-        console.warn('[HubSpot] Access token format might be incorrect. Private App tokens typically start with "pat-"');
+        logger.warn('[HubSpot] Access token format might be incorrect. Private App tokens typically start with "pat-"');
       }
       
       // ✅ REFACTORED: HubSpot with typed resolution
@@ -16268,7 +16269,7 @@ export async function executeNodeLegacy(
         // ✅ FIX 4: Validate required fields for contacts
         if (operation === 'create' && resource === 'contacts') {
           if (!properties.email && !properties.firstname && !properties.lastname) {
-            console.warn('[HubSpot] Creating contact without email, firstname, or lastname. At least one is recommended.');
+            logger.warn('[HubSpot] Creating contact without email, firstname, or lastname. At least one is recommended.');
           }
         }
       } else if (operation === 'create' || operation === 'update') {
@@ -16312,7 +16313,7 @@ export async function executeNodeLegacy(
             properties: properties,
           };
           
-          console.log(`[HubSpot] Creating ${resource} with properties:`, JSON.stringify(properties, null, 2));
+          logger.info(`[HubSpot] Creating ${resource} with properties:`, JSON.stringify(properties, null, 2));
           
           const fetchResponse = await fetch(url, {
             method: 'POST',
@@ -16332,7 +16333,7 @@ export async function executeNodeLegacy(
               // Use raw text if not JSON
             }
             
-            console.error(`[HubSpot] CREATE failed:`, {
+            logger.error(`[HubSpot] CREATE failed:`, {
               status: fetchResponse.status,
               statusText: fetchResponse.statusText,
               error: errorDetails,
@@ -16343,7 +16344,7 @@ export async function executeNodeLegacy(
           }
           
           const responseData = JSON.parse(responseText);
-          console.log(`[HubSpot] ✅ Created ${resource} successfully:`, responseData.id);
+          logger.info(`[HubSpot] ✅ Created ${resource} successfully:`, responseData.id);
           
           // Return the created record
           result = {
@@ -16396,7 +16397,7 @@ export async function executeNodeLegacy(
           
           // Properties can be empty for partial updates, but warn if completely empty
           if (!properties || Object.keys(properties).length === 0) {
-            console.warn('[HubSpot] UPDATE operation with empty properties - this will not update any fields');
+            logger.warn('[HubSpot] UPDATE operation with empty properties - this will not update any fields');
           }
           
           const url = `${baseUrl}/crm/v3/objects/${resource}/${id}`;
@@ -16404,7 +16405,7 @@ export async function executeNodeLegacy(
             properties: properties || {},
           };
           
-          console.log(`[HubSpot] Updating ${resource} ${id} with properties:`, JSON.stringify(properties, null, 2));
+          logger.info(`[HubSpot] Updating ${resource} ${id} with properties:`, JSON.stringify(properties, null, 2));
           
           const fetchResponse = await fetch(url, {
             method: 'PATCH',
@@ -16423,7 +16424,7 @@ export async function executeNodeLegacy(
               // Use raw text if not JSON
             }
             
-            console.error(`[HubSpot] UPDATE failed:`, {
+            logger.error(`[HubSpot] UPDATE failed:`, {
               status: fetchResponse.status,
               statusText: fetchResponse.statusText,
               error: errorDetails,
@@ -16435,7 +16436,7 @@ export async function executeNodeLegacy(
           }
           
           const responseData = JSON.parse(responseText);
-          console.log(`[HubSpot] ✅ Updated ${resource} ${id} successfully`);
+          logger.info(`[HubSpot] ✅ Updated ${resource} ${id} successfully`);
           
           result = {
             id: responseData.id,
@@ -16587,7 +16588,7 @@ export async function executeNodeLegacy(
       } catch (error) {
         // ✅ FIX 9: Better error handling with full error details
         const errorMessage = error instanceof Error ? error.message : 'HubSpot operation failed';
-        console.error(`[HubSpot] ${operation.toUpperCase()} operation failed:`, error);
+        logger.error(`[HubSpot] ${operation.toUpperCase()} operation failed:`, error);
         
         // Re-throw with more context
         if (error instanceof Error && error.message.includes('HubSpot')) {
@@ -17207,7 +17208,7 @@ export async function executeNodeLegacy(
           timestamp: new Date().toISOString(),
         };
       } catch (error: any) {
-        console.error('[AmazonSES] Error:', error);
+        logger.error('[AmazonSES] Error:', error);
         
         // Classify error (Task 6.3)
         const classification = classifyAWSError(error);
@@ -17254,7 +17255,7 @@ export async function executeNodeLegacy(
         projectName = String(projectName || '').trim();
         token = String(token || '').trim();
         
-        console.log(`[Vercel] 🔄 Template resolution complete: operation=${operation}, projectName=${projectName ? '***' : 'empty'}, token=${token ? '***' : 'empty'}`);
+        logger.info(`[Vercel] 🔄 Template resolution complete: operation=${operation}, projectName=${projectName ? '***' : 'empty'}, token=${token ? '***' : 'empty'}`);
 
         // ✅ TASK 10: Credential Resolution and Preflight Checks
         // Requirement 4.1, 4.2, 4.5: Detect Vercel node requires 'vercel' provider credentials
@@ -17264,7 +17265,7 @@ export async function executeNodeLegacy(
         // If token is not provided in config, try to resolve from credentials
         if (!token && db && workflowId) {
           try {
-            console.log('[Vercel] 🔐 Attempting to resolve credentials from credential store');
+            logger.info('[Vercel] 🔐 Attempting to resolve credentials from credential store');
             
             const credential = await retrieveRuntimeCredentialObject({
               userId,
@@ -17277,12 +17278,12 @@ export async function executeNodeLegacy(
 
             if (credential) {
               token = pickCredentialValue(credential, ['token', 'access_token', 'accessToken']) || '';
-              console.log('[Vercel] ✅ Credentials resolved from credential store');
+              logger.info('[Vercel] ✅ Credentials resolved from credential store');
             } else {
-              console.warn('[Vercel] ⚠️  No Vercel credentials found in credential store');
+              logger.warn('[Vercel] ⚠️  No Vercel credentials found in credential store');
             }
           } catch (credResolveError: any) {
-            console.warn(`[Vercel] ⚠️  Error resolving credentials: ${credResolveError.message}`);
+            logger.warn(`[Vercel] ⚠️  Error resolving credentials: ${credResolveError.message}`);
           }
         }
 
@@ -17291,7 +17292,7 @@ export async function executeNodeLegacy(
         if (!operation || (operation !== 'deploy' && operation !== 'list_deployments')) {
           // ✅ TASK 14: Logging - Log validation errors with field details
           // Requirement 14.3: Log validation errors with field name, error code, constraint violated
-          console.warn(`[Vercel] ❌ Validation failed: Invalid operation: ${operation}`);
+          logger.warn(`[Vercel] ❌ Validation failed: Invalid operation: ${operation}`);
           return {
             success: false,
             data: null,
@@ -17313,7 +17314,7 @@ export async function executeNodeLegacy(
         if (!token) {
           // ✅ TASK 14: Logging - Log validation errors without exposing token
           // Requirement 14.4: Log authentication errors without exposing token
-          console.warn('[Vercel] ❌ Validation failed: Missing or empty token');
+          logger.warn('[Vercel] ❌ Validation failed: Missing or empty token');
           return {
             success: false,
             data: null,
@@ -17334,7 +17335,7 @@ export async function executeNodeLegacy(
         // Vercel tokens typically start with 'vercel_' or are long alphanumeric strings
         const isValidTokenFormat = /^[a-zA-Z0-9_\-]{20,}$/.test(token) || token.startsWith('vercel_');
         if (!isValidTokenFormat) {
-          console.warn('[Vercel] ❌ Validation failed: Invalid token format');
+          logger.warn('[Vercel] ❌ Validation failed: Invalid token format');
           return {
             success: false,
             data: null,
@@ -17355,7 +17356,7 @@ export async function executeNodeLegacy(
         // Requirement 5.3: Invalid projectName format rejected
         if (operation === 'deploy') {
           if (!projectName) {
-            console.warn('[Vercel] ❌ Validation failed: Missing projectName for deploy operation');
+            logger.warn('[Vercel] ❌ Validation failed: Missing projectName for deploy operation');
             return {
               success: false,
               data: null,
@@ -17374,7 +17375,7 @@ export async function executeNodeLegacy(
           // Validate projectName format: alphanumeric, hyphens, underscores only, max 128 chars
           const projectNameRegex = /^[a-zA-Z0-9_-]{1,128}$/;
           if (!projectNameRegex.test(projectName)) {
-            console.warn(`[Vercel] ❌ Validation failed: Invalid projectName format: ${projectName}`);
+            logger.warn(`[Vercel] ❌ Validation failed: Invalid projectName format: ${projectName}`);
             return {
               success: false,
               data: null,
@@ -17393,7 +17394,7 @@ export async function executeNodeLegacy(
         }
 
         // ✅ All validations passed - proceed with operation
-        console.log(`[Vercel] ✅ Validation passed for operation: ${operation}`);
+        logger.info(`[Vercel] ✅ Validation passed for operation: ${operation}`);
 
         // Helper function to classify errors and determine retriability
         // Task 4: Error Classification and Response Formatting
@@ -17439,7 +17440,7 @@ export async function executeNodeLegacy(
 
           // ✅ TASK 14: Logging - Log all API requests
           // Requirement 14.1: Log all API requests with operation type, timestamp, endpoint, method
-          console.log(`[Vercel] 📤 API request: ${method} ${endpoint} at ${new Date().toISOString()}`);
+          logger.info(`[Vercel] 📤 API request: ${method} ${endpoint} at ${new Date().toISOString()}`);
 
           try {
             // Create abort controller for timeout
@@ -17465,7 +17466,7 @@ export async function executeNodeLegacy(
 
             // ✅ TASK 14: Logging - Log all API responses
             // Requirement 14.2: Log all API responses with status code, response time, operation type
-            console.log(`[Vercel] 📥 API response: ${method} ${endpoint} - Status ${response.status} (${responseTime}ms)`);
+            logger.info(`[Vercel] 📥 API response: ${method} ${endpoint} - Status ${response.status} (${responseTime}ms)`);
 
             // ✅ TASK 12: HTTP Client - Handle non-2xx status codes
             // Requirement 7.4: Capture error response for non-2xx status codes
@@ -17489,7 +17490,7 @@ export async function executeNodeLegacy(
 
             // Check if it's a timeout error
             if (error.name === 'AbortError') {
-              console.warn(`[Vercel] ⏱️  Request timeout after ${responseTime}ms (limit: ${timeoutMs}ms)`);
+              logger.warn(`[Vercel] ⏱️  Request timeout after ${responseTime}ms (limit: ${timeoutMs}ms)`);
               return {
                 success: false,
                 error: 'Request timeout',
@@ -17497,7 +17498,7 @@ export async function executeNodeLegacy(
             }
 
             // Network error
-            console.error(`[Vercel] 🌐 Network error: ${error.message}`);
+            logger.error(`[Vercel] 🌐 Network error: ${error.message}`);
             return {
               success: false,
               error: error.message || 'Network error',
@@ -17507,7 +17508,7 @@ export async function executeNodeLegacy(
 
         // Task 5 & 6: Deploy Operation Handler with Error Handling
         if (operation === 'deploy') {
-          console.log(`[Vercel] 🚀 Starting deploy operation for project: ${projectName}`);
+          logger.info(`[Vercel] 🚀 Starting deploy operation for project: ${projectName}`);
 
           // Make API request to Vercel deploy endpoint
           // Requirement 2.3: Build Vercel API request: POST to /v13/deployments endpoint
@@ -17527,7 +17528,7 @@ export async function executeNodeLegacy(
             const errorType = deployResult.error?.includes('timeout') ? 'TIMEOUT' : 'API_ERROR';
             const { code, retriable } = classifyError(deployResult.statusCode || null, errorType);
 
-            console.warn(`[Vercel] ❌ Deploy failed with error code: ${code}`);
+            logger.warn(`[Vercel] ❌ Deploy failed with error code: ${code}`);
 
             return {
               success: false,
@@ -17562,13 +17563,13 @@ export async function executeNodeLegacy(
             error: null,
           };
 
-          console.log(`[Vercel] ✅ Deploy successful: ${formattedResponse.data.deploymentId}`);
+          logger.info(`[Vercel] ✅ Deploy successful: ${formattedResponse.data.deploymentId}`);
           return formattedResponse;
         }
 
         // Task 7 & 8: List Deployments Operation Handler with Error Handling
         if (operation === 'list_deployments') {
-          console.log('[Vercel] 📋 Starting list_deployments operation');
+          logger.info('[Vercel] 📋 Starting list_deployments operation');
 
           // Make API request to Vercel list deployments endpoint
           // Requirement 3.3: Retrieve all deployments from the Vercel API
@@ -17589,7 +17590,7 @@ export async function executeNodeLegacy(
             const errorType = listResult.error?.includes('timeout') ? 'TIMEOUT' : 'API_ERROR';
             const { code, retriable } = classifyError(listResult.statusCode || null, errorType);
 
-            console.warn(`[Vercel] ❌ List deployments failed with error code: ${code}`);
+            logger.warn(`[Vercel] ❌ List deployments failed with error code: ${code}`);
 
             return {
               success: false,
@@ -17635,7 +17636,7 @@ export async function executeNodeLegacy(
             error: null,
           };
 
-          console.log(`[Vercel] ✅ List deployments successful: ${formattedResponse.data.total} deployments`);
+          logger.info(`[Vercel] ✅ List deployments successful: ${formattedResponse.data.total} deployments`);
           return formattedResponse;
         }
 
@@ -17650,7 +17651,7 @@ export async function executeNodeLegacy(
           },
         };
       } catch (error: any) {
-        console.error('[Vercel] Unexpected error:', error);
+        logger.error('[Vercel] Unexpected error:', error);
         return {
           success: false,
           data: null,
@@ -17723,7 +17724,7 @@ export async function executeNodeLegacy(
 
         const base = `https://api.contentful.com/spaces/${spaceId}/environments/${environment}/entries`;
         const authHeader = `Bearer ${accessToken}`;
-        console.log(`[contentful] operation=${operation} spaceId=${spaceId}`);
+        logger.info(`[contentful] operation=${operation} spaceId=${spaceId}`);
 
         let response: any;
         if (operation === 'get_entries') {
@@ -17770,7 +17771,7 @@ export async function executeNodeLegacy(
 
         const authHeader = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
         const baseUrl = `${siteUrl}/wp-json/wp/v2/posts`;
-        console.log(`[wordpress] operation=${operation} siteUrl=${siteUrl}`);
+        logger.info(`[wordpress] operation=${operation} siteUrl=${siteUrl}`);
 
         let response: any;
         if (operation === 'create_post') {
@@ -17815,7 +17816,7 @@ export async function executeNodeLegacy(
 
         const baseUrl = `https://${subdomain}.zendesk.com/api/v2`;
         const authHeader = `Basic ${Buffer.from(`${email}/token:${apiToken}`).toString('base64')}`;
-        console.log(`[zendesk] operation=${operation} subdomain=${subdomain}`);
+        logger.info(`[zendesk] operation=${operation} subdomain=${subdomain}`);
 
         let response: any;
         if (operation === 'get_tickets') {
@@ -17862,7 +17863,7 @@ export async function executeNodeLegacy(
 
         const apiBase = 'https://api.netlify.com/api/v1';
         const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-        console.log(`[netlify] operation=${operation} resource=${resource}`);
+        logger.info(`[netlify] operation=${operation} resource=${resource}`);
 
         let response: any;
         if (operation === 'list_sites') {
@@ -17914,7 +17915,7 @@ export async function executeNodeLegacy(
           ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
           : `Bearer ${accessToken}`;
         const headers: Record<string, string> = { Authorization: authHeader, 'Content-Type': 'application/json' };
-        console.log(`[workday] operation=${operation} resource=${resource} tenant=${tenant}`);
+        logger.info(`[workday] operation=${operation} resource=${resource} tenant=${tenant}`);
 
         const resourcePath = rawPath || `/${resource}`;
         let url: string;
@@ -17972,7 +17973,7 @@ export async function executeNodeLegacy(
         const indexPath = index.startsWith('http') ? '' : `/databases/${index}`;
         const baseUrl = `${indexHost}${indexPath}`;
         const headers: Record<string, string> = { 'Api-Key': apiKey, 'Content-Type': 'application/json' };
-        console.log(`[pinecone] operation=${operation} index=${index}`);
+        logger.info(`[pinecone] operation=${operation} index=${index}`);
 
         let response: any;
         if (operation === 'query') {
@@ -18021,7 +18022,7 @@ export async function executeNodeLegacy(
         if (apiKey) headers['api-key'] = apiKey;
 
         const baseUrl = `${url}/collections/${collection}`;
-        console.log(`[qdrant] operation=${operation} collection=${collection}`);
+        logger.info(`[qdrant] operation=${operation} collection=${collection}`);
 
         // Ensure collection exists before upsert/query (create if missing)
         const collectionCheck = await fetch(`${url}/collections/${collection}`, { headers });
@@ -18100,7 +18101,7 @@ export async function executeNodeLegacy(
 
         if (!effectiveMessage) return { success: false, response: '', model, finishReason: '', inputTokens: 0, outputTokens: 0, error: 'prompt is required' };
 
-        console.log(`[cohere] model=${model} message_len=${effectiveMessage.length}`);
+        logger.info(`[cohere] model=${model} message_len=${effectiveMessage.length}`);
 
         const body: Record<string, unknown> = { model, message: effectiveMessage, temperature, max_tokens: maxTokens };
         if (effectivePreamble) body.preamble = effectivePreamble;
@@ -18350,7 +18351,7 @@ export async function executeNodeLegacy(
         const apiKey = getStringProperty(config, 'apiKey', '');
         const tools = (config as any).tools || [];
 
-        console.log(`[langchain] operation=${operation} provider=${provider}`);
+        logger.info(`[langchain] operation=${operation} provider=${provider}`);
 
         let apiUrl: string;
         let requestBody: Record<string, unknown>;
@@ -18402,7 +18403,7 @@ export async function executeNodeLegacy(
 
         // Lightricks LTX-2 runs as a local FastAPI service
         const serviceUrl = process.env.LIGHTRICKS_SERVICE_URL || 'http://localhost:8000';
-        console.log(`[lightricks] mode=${mode} serviceUrl=${serviceUrl}`);
+        logger.info(`[lightricks] mode=${mode} serviceUrl=${serviceUrl}`);
 
         const requestBody: Record<string, unknown> = { prompt, mode, duration, fps, resolution, options };
         if (image_url) requestBody.image_url = image_url;
@@ -18425,7 +18426,7 @@ export async function executeNodeLegacy(
 
     default: {
       // For unknown node types, return input as output
-      console.warn(`Unknown node type: ${type}, returning input as output`);
+      logger.warn(`Unknown node type: ${type}, returning input as output`);
       result = inputObj;
       break;
     }
@@ -18455,7 +18456,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
   const { workflowId, executionId: providedExecutionId, input = {}, useQueue } = req.body;
 
   // ✅ TEMP: Structured logging at endpoint start
-  console.log('[ExecuteWorkflow] 🔵 ENDPOINT_START', JSON.stringify({
+  logger.info('[ExecuteWorkflow] 🔵 ENDPOINT_START', JSON.stringify({
     workflowId,
     providedExecutionId,
     hasInput: !!input && Object.keys(input).length > 0,
@@ -18505,11 +18506,11 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         metadata: { source: 'engine-100', origin: 'worker' },
       });
     } catch (err: any) {
-      console.error('[ExecuteWorkflow] Engine delegation error:', err?.message);
+      logger.error('[ExecuteWorkflow] Engine delegation error:', err?.message);
     }
 
     if (engineResult) {
-      console.log(`[ExecuteWorkflow] Engine: delegated ${engineExecId}`);
+      logger.info(`[ExecuteWorkflow] Engine: delegated ${engineExecId}`);
       return res.status(202).json({
         status: 'queued',
         jobId: engineResult.jobId ?? `engine-${engineExecId}`,
@@ -18518,7 +18519,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       });
     }
 
-    console.error(`[ExecuteWorkflow] Engine unavailable for ${engineExecId} — returning 503`);
+    logger.error(`[ExecuteWorkflow] Engine unavailable for ${engineExecId} — returning 503`);
     // ✅ FIX: Mark pre-created execution as failed so UI doesn't stay stuck at "running".
     if (providedExecutionId) {
       await db.from('executions').update({
@@ -18583,7 +18584,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       } catch (dbErr: any) {
         // Unique violation (23505) means the execution already exists — safe to ignore.
         if (dbErr?.code !== '23505') {
-          console.warn('[ExecuteWorkflow] Could not pre-create execution record:', dbErr?.message);
+          logger.warn('[ExecuteWorkflow] Could not pre-create execution record:', dbErr?.message);
         }
       }
 
@@ -18602,7 +18603,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         },
       });
       
-      console.log(`[ExecuteWorkflow] Job queued: ${jobId} (execution: ${executionId})`);
+      logger.info(`[ExecuteWorkflow] Job queued: ${jobId} (execution: ${executionId})`);
       
       // Return job status immediately
       return res.status(202).json({
@@ -18613,9 +18614,9 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       });
       
     } catch (error: any) {
-      console.error('[ExecuteWorkflow] Queue error:', error);
+      logger.error('[ExecuteWorkflow] Queue error:', error);
       // Fallback to direct execution if queue fails
-      console.log('[ExecuteWorkflow] Falling back to direct execution');
+      logger.info('[ExecuteWorkflow] Falling back to direct execution');
     }
   }
   
@@ -18643,7 +18644,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                        isInternalChatExecution ? 'chat-trigger' :
                        isInternalWebhookExecution ? 'webhook' :
                        isInternalTriggerExecution ? 'trigger-service' : 'unknown';
-    console.log(`[Execute Workflow] Bypassing Google OAuth for internal ${triggerType} execution`);
+    logger.info(`[Execute Workflow] Bypassing Google OAuth for internal ${triggerType} execution`);
   }
 
   // ✅ CRITICAL: Import workflow cloner for immutable execution
@@ -18664,7 +18665,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           const { data: { user }, error: authError } = await db.auth.getUser(token);
           if (!authError && user) {
             currentUserId = user.id;
-            console.log(`[Execute Workflow] Current user: ${currentUserId}`);
+            logger.info(`[Execute Workflow] Current user: ${currentUserId}`);
 
             // Email-based fallback: resolve the Cognito sub that has the OAuth token.
             // JWT access tokens often lack the email claim, so fall back to a DB lookup.
@@ -18679,21 +18680,21 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               const { resolveUserIdByEmail } = await import('../shared/credential-resolver');
               const resolvedId = await resolveUserIdByEmail(emailForResolution).catch(() => null);
               if (resolvedId && resolvedId !== currentUserId) {
-                console.log(`[Execute Workflow] Email-based user resolution: ${currentUserId} → ${resolvedId}`);
+                logger.info(`[Execute Workflow] Email-based user resolution: ${currentUserId} → ${resolvedId}`);
                 currentUserId = resolvedId;
               }
             }
           } else if (authError) {
             // Log auth error but don't fail - workflow can still execute
-            console.log(`[Execute Workflow] Auth error (non-fatal): ${authError.message || 'Unknown auth error'}`);
+            logger.info(`[Execute Workflow] Auth error (non-fatal): ${authError.message || 'Unknown auth error'}`);
           }
         } catch (authErr: any) {
           // Handle network/connection errors gracefully
           const errorMsg = authErr?.message || 'Unknown error';
           if (errorMsg.includes('ENOTFOUND') || errorMsg.includes('fetch failed')) {
-            console.log('[Execute Workflow] DB connection issue - continuing without current user ID');
+            logger.info('[Execute Workflow] DB connection issue - continuing without current user ID');
           } else {
-            console.log(`[Execute Workflow] Auth extraction error (non-fatal): ${errorMsg}`);
+            logger.info(`[Execute Workflow] Auth extraction error (non-fatal): ${errorMsg}`);
           }
         }
       }
@@ -18701,7 +18702,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
   } catch (error: any) {
     // Auth is optional - workflow can still execute without it
     const errorMsg = error?.message || 'Unknown error';
-    console.log(`[Execute Workflow] Auth extraction failed (non-fatal): ${errorMsg}`);
+    logger.info(`[Execute Workflow] Auth extraction failed (non-fatal): ${errorMsg}`);
   }
 
   try {
@@ -18721,7 +18722,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     // ✅ SAFETY: Explicitly ensure we're not using cached data
     // Force fresh fetch by checking updated_at timestamp
     if (workflow && workflow.updated_at) {
-      console.log(`[ExecuteWorkflow] 🔄 Fresh DB fetch confirmed - Workflow updated_at: ${workflow.updated_at}`);
+      logger.info(`[ExecuteWorkflow] 🔄 Fresh DB fetch confirmed - Workflow updated_at: ${workflow.updated_at}`);
     }
 
     // ✅ DEBUG: Log workflow fetch with hash for verification
@@ -18731,11 +18732,11 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         edges: workflow.edges?.map((e: any) => ({ source: e.source, target: e.target }))
       });
       const hash = require('crypto').createHash('md5').update(graphHash).digest('hex').substring(0, 8);
-      console.log(`[ExecuteWorkflow] 📥 Fresh workflow fetched from DB - Graph hash: ${hash}, Updated at: ${workflow.updated_at || 'N/A'}`);
+      logger.info(`[ExecuteWorkflow] 📥 Fresh workflow fetched from DB - Graph hash: ${hash}, Updated at: ${workflow.updated_at || 'N/A'}`);
     }
 
     if (workflowError || !workflow) {
-      console.error('Workflow fetch error:', workflowError);
+      logger.error('Workflow fetch error:', workflowError);
       
       // Check if it's a DB connection error
       const errorMessage = workflowError?.message || String(workflowError || '');
@@ -18761,13 +18762,13 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     // Check both confirmed field and status field for backward compatibility
     const { isSetupPending, setupPendingResponse } = await import('./workflow-setup-lifecycle');
     if (isSetupPending(workflow)) {
-      console.warn(`[ExecuteWorkflow] Execution blocked - workflow ${workflowId} is still in hidden setup`);
+      logger.warn(`[ExecuteWorkflow] Execution blocked - workflow ${workflowId} is still in hidden setup`);
       return res.status(409).json(setupPendingResponse(workflowId));
     }
 
     const isConfirmed = workflow.confirmed === true || workflow.status === 'active';
     if (!isConfirmed) {
-      console.error(`[ExecuteWorkflow] ❌ Execution blocked - Workflow ${workflowId} is not confirmed`);
+      logger.error(`[ExecuteWorkflow] ❌ Execution blocked - Workflow ${workflowId} is not confirmed`);
       return res.status(403).json({
         error: 'Workflow execution not allowed',
         message: 'Workflow must be confirmed before execution',
@@ -18810,7 +18811,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       const unexpected = resolvedTypes.filter((t, i) => !authoritativeSet.has(t) && !bypassResults[i]);
       if (unexpected.length > 0) {
         const message = `Execution blocked by intent-authority guard: unexpected semantic node(s): ${[...new Set(unexpected)].join(', ')}`;
-        console.warn(`[ExecuteWorkflow] ${message}`);
+        logger.warn(`[ExecuteWorkflow] ${message}`);
         if (getIntentAuthorityExecutionMode() !== 'shadow') {
           return res.status(409).json({
             error: 'intent_authority_violation',
@@ -18843,7 +18844,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         })()
       ).length;
       
-      console.log('[ExecuteWorkflow] 🔄 Normalization + Linearization applied before execution:', {
+      logger.info('[ExecuteWorkflow] 🔄 Normalization + Linearization applied before execution:', {
         workflowId,
         executionId,
         migrationsApplied: normalized.migrationsApplied,
@@ -18867,14 +18868,14 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     const edges = clonedWorkflow.edges;
     const workflowOwnerId = workflow.user_id || currentUserId;
     if (currentUserId && workflowOwnerId && currentUserId !== workflowOwnerId) {
-      console.info('[ExecuteWorkflow] Cross-user trigger uses workflow owner credentials only', {
+      logger.info('[ExecuteWorkflow] Cross-user trigger uses workflow owner credentials only', {
         workflowId,
         workflowOwnerId,
         currentUserId,
       });
     }
     
-    console.log('[ExecuteWorkflow] ✅ Workflow normalized and cloned for immutable execution', {
+    logger.info('[ExecuteWorkflow] ✅ Workflow normalized and cloned for immutable execution', {
       originalNodeCount: originalNodes.length,
       normalizedNodeCount: normalized.nodes.length,
       originalEdgeCount: originalEdges.length,
@@ -18926,7 +18927,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
              nodeType.includes('trigger') ||
              ['manual_trigger', 'webhook', 'schedule', 'interval', 'form', 'chat_trigger', 'workflow_trigger'].includes(nodeType);
     });
-    console.log(`[ExecuteWorkflow] 🔍 Validation input: ${nodes.length} nodes, ${triggersBeforeValidation.length} trigger(s)`, {
+    logger.info(`[ExecuteWorkflow] 🔍 Validation input: ${nodes.length} nodes, ${triggersBeforeValidation.length} trigger(s)`, {
       triggerIds: triggersBeforeValidation.map(t => t.id),
       nodeIds: nodes.map(n => n.id),
     });
@@ -19076,7 +19077,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     const discoveryManualRequiredMissingCount = nodeInputs.inputs.filter((i) => i.required).length;
     const blockingMissingCount = allMissingInputs.filter((i) => i.required).length;
     if (discoveryManualRequiredMissingCount !== blockingMissingCount) {
-      console.warn('[ExecuteWorkflow] ⚠️ READINESS_DISCOVERY_MISMATCH', {
+      logger.warn('[ExecuteWorkflow] ⚠️ READINESS_DISCOVERY_MISMATCH', {
         workflowId,
         discoveryManualRequiredMissingCount,
         blockingMissingCount,
@@ -19118,7 +19119,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     };
     
     // ✅ TEMP: Structured logging after readiness validation
-    console.log('[ExecuteWorkflow] 🟢 READINESS_CHECK', JSON.stringify({
+    logger.info('[ExecuteWorkflow] 🟢 READINESS_CHECK', JSON.stringify({
       ...readinessCheck,
       timestamp: new Date().toISOString(),
     }, null, 2));
@@ -19126,7 +19127,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     // ✅ REFACTORED: Auto-prepare workflow if needed
     // If workflow is in draft, auto-update to active (Save = Ready to Run)
     if (workflowStatus === 'draft' || workflowStatus === 'ready') {
-      console.log(`[ExecuteWorkflow] Workflow is in "${workflowStatus}" status - checking if we can auto-prepare...`);
+      logger.info(`[ExecuteWorkflow] Workflow is in "${workflowStatus}" status - checking if we can auto-prepare...`);
       
       // Check if workflow actually needs inputs/credentials or if it's ready to run
       const hasAllInputs = allMissingInputs.length === 0;
@@ -19134,7 +19135,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       const validationPasses = executionValidation.ready;
       
       if (hasAllInputs && hasAllCredentials && validationPasses) {
-        console.log(`[ExecuteWorkflow] ✅ Workflow has all inputs and credentials - auto-updating status to active, phase to ready_for_execution`);
+        logger.info(`[ExecuteWorkflow] ✅ Workflow has all inputs and credentials - auto-updating status to active, phase to ready_for_execution`);
         
         // Auto-update status to 'active' (valid enum) and phase to 'ready_for_execution' (TEXT)
         const { data: statusUpdateData, error: statusUpdateError } = await db
@@ -19149,10 +19150,10 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           .single();
 
         if (statusUpdateError) {
-          console.error('[ExecuteWorkflow] ❌ Failed to auto-update workflow status:', statusUpdateError);
+          logger.error('[ExecuteWorkflow] ❌ Failed to auto-update workflow status:', statusUpdateError);
           // Continue anyway - we'll try to execute
         } else {
-          console.log(`[ExecuteWorkflow] ✅ Auto-updated workflow status to active, phase to ready_for_execution`);
+          logger.info(`[ExecuteWorkflow] ✅ Auto-updated workflow status to active, phase to ready_for_execution`);
           // Update local status and phase for rest of execution
           workflowStatus = 'active';
           workflowPhase = 'ready_for_execution';
@@ -19263,7 +19264,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     
     // Log warnings but continue execution
     if (warnings.length > 0) {
-      console.log('[ExecuteWorkflow] ⚠️ Execution warnings (continuing optimistically):', warnings);
+      logger.info('[ExecuteWorkflow] ⚠️ Execution warnings (continuing optimistically):', warnings);
     }
     
     // ✅ CRITICAL: Distributed execution locking - prevent double runs
@@ -19360,7 +19361,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
 
       if (execError || !newExecution) {
         // ✅ TEMP: Structured logging for execution creation failure
-        console.error('[ExecuteWorkflow] ❌ EXECUTION_CREATE_FAILED', JSON.stringify({
+        logger.error('[ExecuteWorkflow] ❌ EXECUTION_CREATE_FAILED', JSON.stringify({
           workflowId,
           error: execError?.message,
           errorCode: execError?.code,
@@ -19383,7 +19384,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       } catch (_) {}
 
       // ✅ TEMP: Structured logging after execution row created
-      console.log('[ExecuteWorkflow] 🟢 EXECUTION_ROW_CREATED', JSON.stringify({
+      logger.info('[ExecuteWorkflow] 🟢 EXECUTION_ROW_CREATED', JSON.stringify({
         workflowId,
         executionId,
         status: newExecution.status,
@@ -19402,7 +19403,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
 
       // ✅ CRITICAL: Acquire distributed execution lock (atomic)
       // ✅ TEMP: Structured logging before lock acquisition
-      console.log('[ExecuteWorkflow] 🟡 LOCK_ACQUIRE_START', JSON.stringify({
+      logger.info('[ExecuteWorkflow] 🟡 LOCK_ACQUIRE_START', JSON.stringify({
         workflowId,
         executionId,
         timestamp: new Date().toISOString(),
@@ -19411,7 +19412,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       const lockResult = await acquireExecutionLock(db, workflowId, executionId);
       
       // ✅ TEMP: Structured logging after lock acquisition
-      console.log('[ExecuteWorkflow] 🟡 LOCK_ACQUIRE_RESULT', JSON.stringify({
+      logger.info('[ExecuteWorkflow] 🟡 LOCK_ACQUIRE_RESULT', JSON.stringify({
         workflowId,
         executionId,
         lockAcquired: lockResult.acquired,
@@ -19438,7 +19439,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       }
 
       // ✅ TEMP: Structured logging before event logging
-      console.log('[ExecuteWorkflow] 🟡 EVENT_LOG_START', JSON.stringify({
+      logger.info('[ExecuteWorkflow] 🟡 EVENT_LOG_START', JSON.stringify({
         workflowId,
         executionId,
         events: ['LOCK_ACQUIRED', 'RUN_STARTED'],
@@ -19453,7 +19454,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         });
       } catch (err: any) {
         // ✅ CRITICAL: Log error but don't fail execution - event logging is non-critical
-        console.error('[ExecuteWorkflow] ❌ LOCK_ACQUIRED event failed (non-fatal):', {
+        logger.error('[ExecuteWorkflow] ❌ LOCK_ACQUIRED event failed (non-fatal):', {
           error: err?.message || String(err),
           executionId,
           workflowId,
@@ -19478,13 +19479,13 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                 severity: 'warning',
               });
             } catch (warnErr: any) {
-              console.warn('[ExecuteWorkflow] Warning log failed (non-fatal):', warnErr?.message);
+              logger.warn('[ExecuteWorkflow] Warning log failed (non-fatal):', warnErr?.message);
             }
           }
         }
       } catch (err: any) {
         // ✅ CRITICAL: Log error but don't fail execution - event logging is non-critical
-        console.error('[ExecuteWorkflow] ❌ RUN_STARTED event failed (non-fatal):', {
+        logger.error('[ExecuteWorkflow] ❌ RUN_STARTED event failed (non-fatal):', {
           error: err?.message || String(err),
           executionId,
           workflowId,
@@ -19493,7 +19494,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       }
 
       // ✅ TEMP: Structured logging after event logging
-      console.log('[ExecuteWorkflow] 🟢 EVENT_LOG_COMPLETE', JSON.stringify({
+      logger.info('[ExecuteWorkflow] 🟢 EVENT_LOG_COMPLETE', JSON.stringify({
         workflowId,
         executionId,
         eventsLogged: ['LOCK_ACQUIRED', 'RUN_STARTED'],
@@ -19504,7 +19505,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     logs = [];
     
     // ✅ TEMP: Structured logging before execution setup
-    console.log('[ExecuteWorkflow] 🟢 EXECUTION_SETUP_START', JSON.stringify({
+    logger.info('[ExecuteWorkflow] 🟢 EXECUTION_SETUP_START', JSON.stringify({
       workflowId,
       executionId,
       providedExecutionId,
@@ -19544,11 +19545,11 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     // This will load previous node outputs if resuming
     try {
       await centralState.initialize();
-      console.log(`[EnterpriseState] ✅ Initialized execution state for ${executionId}`);
+      logger.info(`[EnterpriseState] ✅ Initialized execution state for ${executionId}`);
     } catch (error: any) {
       // If execution doesn't exist yet, that's fine - we'll create it
       if (!error.message?.includes('not found')) {
-        console.error(`[EnterpriseState] ❌ Failed to initialize:`, error);
+        logger.error(`[EnterpriseState] ❌ Failed to initialize:`, error);
         // Continue anyway - will create new state
       }
     }
@@ -19565,12 +19566,12 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     
     // Also set in central state
     await centralState.setNodeOutput('trigger', 'Trigger', 'trigger', {}, input, 0).catch(err => {
-      console.warn(`[EnterpriseState] Failed to set trigger in central state:`, err);
+      logger.warn(`[EnterpriseState] Failed to set trigger in central state:`, err);
     });
     
     // Warn if cache size may be too small for workflow
     if (nodes.length > 0 && cacheSize < nodes.length * 0.5) {
-      console.warn(
+      logger.warn(
         `[Memory] Cache size (${cacheSize}) may be too small for workflow with ${nodes.length} nodes. ` +
         `Consider increasing NODE_OUTPUTS_CACHE_SIZE to at least ${Math.ceil(nodes.length * 0.8)}`
       );
@@ -19659,7 +19660,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     (global as any).__executionNodeTypeById = __executionNodeTypeById;
     
     // ✅ DEBUG: Log workflow structure
-    console.log('[ExecuteWorkflow] 📊 Workflow structure:', {
+    logger.info('[ExecuteWorkflow] 📊 Workflow structure:', {
       totalNodes: nodes.length,
       totalEdges: edges.length,
       triggerNode: executionPlan.triggerNode ? { id: executionPlan.triggerNode.id, type: executionPlan.triggerNode.data.type, label: executionPlan.triggerNode.data.label } : null,
@@ -19687,7 +19688,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       // ✅ CRITICAL: Use execution input when resuming (it contains form submission data)
       if (execData?.input) {
         executionInput = execData.input;
-        console.log(`[Resume] Using execution input (contains form submission data):`, {
+        logger.info(`[Resume] Using execution input (contains form submission data):`, {
           hasFormData: !!(execData.input as any)?.form || !!(execData.input as any)?.submitted_at,
           inputKeys: Object.keys(execData.input as Record<string, unknown>),
         });
@@ -19712,7 +19713,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       // Chat trigger now works like webhook - each message creates a new execution
       // No resume logic needed for chat - workflow runs from start each time
       
-      console.log(`[Resume] Checking for form resume:`, {
+      logger.info(`[Resume] Checking for form resume:`, {
         hasFormSubmissionData,
         isResumingFromForm,
         formNodeId,
@@ -19739,7 +19740,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           // This ensures the form node updates the heartbeat and prevents stale_heartbeat timeout
           startFromIndex = formNodeIndex;
           const formNode = executionOrder[formNodeIndex];
-          console.log(`[Resume] Resuming from node index ${startFromIndex} (at form node ${formNode.id})`);
+          logger.info(`[Resume] Resuming from node index ${startFromIndex} (at form node ${formNode.id})`);
           
           // ENTERPRISE ARCHITECTURE: Restore from database (source of truth)
           // CentralExecutionState already loaded state from database in initialize()
@@ -19754,7 +19755,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             // Use warm() to restore all entries at once with same timestamp
             if (Object.keys(restoredOutputs).length > 0) {
               nodeOutputs.warm(restoredOutputs);
-              console.log(`[Resume] Restored ${Object.keys(restoredOutputs).length} node outputs from logs (backward compatibility)`);
+              logger.info(`[Resume] Restored ${Object.keys(restoredOutputs).length} node outputs from logs (backward compatibility)`);
             }
           }
           
@@ -19775,7 +19776,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               formOutput,
               formNodeIndex
             ).catch(err => {
-              console.warn(`[EnterpriseState] Failed to persist form output:`, err);
+              logger.warn(`[EnterpriseState] Failed to persist form output:`, err);
             });
             
             // Create a log entry for the form node so it appears in execution logs
@@ -19792,7 +19793,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             };
             logs.push(formNodeLog);
             
-            console.log(`[Resume] Set form node output from submission data:`, {
+            logger.info(`[Resume] Set form node output from submission data:`, {
               hasFormFields: !!(execData.input as any).data,
               hasTopLevelFields: Object.keys(execData.input as Record<string, unknown>).filter(k => !['submitted_at', 'form', 'data', 'files', 'meta'].includes(k)).length,
               formNodeId: formNode.id,
@@ -19800,7 +19801,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             });
           }
         } else if (hasFormSubmissionData) {
-          console.warn(`[Resume] Form submission data detected but form node not found in execution order`);
+          logger.warn(`[Resume] Form submission data detected but form node not found in execution order`);
         }
       }
 
@@ -19808,13 +19809,13 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       // No resume logic needed - workflow runs from start each time
     }
 
-    console.log('Execution order:', executionOrder.map(n => n.data.label));
+    logger.info('Execution order:', executionOrder.map(n => n.data.label));
     if (startFromIndex > 0) {
-      console.log(`[Resume] Skipping first ${startFromIndex} nodes, starting from: ${executionOrder[startFromIndex]?.data.label}`);
+      logger.info(`[Resume] Skipping first ${startFromIndex} nodes, starting from: ${executionOrder[startFromIndex]?.data.label}`);
     }
 
     // ✅ TEMP: Structured logging before execution loop
-    console.log('[ExecuteWorkflow] 🟢 EXECUTION_LOOP_START', JSON.stringify({
+    logger.info('[ExecuteWorkflow] 🟢 EXECUTION_LOOP_START', JSON.stringify({
       workflowId,
       executionId,
       totalNodes: executionOrder.length,
@@ -19828,7 +19829,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     // Uses fresh `workflow` row (select('*')): metadata.originalUserPrompt is canonical; per-run payload can override.
     const userIntent = resolveWorkflowRuntimeIntent(workflow as any, executionInput);
     (global as any).currentWorkflowIntent = userIntent;
-    console.log(`[ExecuteWorkflow] ✅ Stored user intent for AI Input Resolver: "${userIntent.substring(0, 100)}..."`);
+    logger.info(`[ExecuteWorkflow] ✅ Stored user intent for AI Input Resolver: "${userIntent.substring(0, 100)}..."`);
 
     // ✅ FIX: Use executionInput (which may contain form submission data when resuming)
     let finalOutput: unknown = executionInput;
@@ -19866,7 +19867,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
       
       // ✅ CRITICAL: Log trigger node execution start explicitly
       if (isTriggerNode) {
-        console.log(`[ExecuteWorkflow] 🎯 Trigger node execution: ${node.data?.label || node.id} (${nodeType})`);
+        logger.info(`[ExecuteWorkflow] 🎯 Trigger node execution: ${node.data?.label || node.id} (${nodeType})`);
       }
 
       try {
@@ -19915,7 +19916,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           logs.push(log);
           try { wsStateManager.updateNodeState(executionId, node.id, node.data?.label || node.id, 'skipped'); } catch (_e) { /* non-fatal */ }
 
-          console.log('[ExecuteWorkflow] ⏭️  Skipping node (wrong branch):', {
+          logger.info('[ExecuteWorkflow] ⏭️  Skipping node (wrong branch):', {
             nodeId: node.id,
             nodeLabel: node.data?.label,
             nodeType: nodeType,
@@ -19950,18 +19951,18 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                   // Warm memory cache with database data
                   nodeOutputs.set(edge.source, sourceOutput);
                   if (process.env.ENABLE_MEMORY_LOGGING === 'true') {
-                    console.log(`[EnterpriseState] Loaded node ${edge.source} from database (cache miss)`);
+                    logger.info(`[EnterpriseState] Loaded node ${edge.source} from database (cache miss)`);
                   }
                 }
               } catch (dbError) {
-                console.warn(`[EnterpriseState] Failed to load ${edge.source} from database:`, dbError);
+                logger.warn(`[EnterpriseState] Failed to load ${edge.source} from database:`, dbError);
               }
             }
             
             if (sourceOutput === undefined || sourceOutput === null) {
               const nodeExists = nodes.some(n => n.id === edge.source);
               if (nodeExists) {
-                console.warn(
+                logger.warn(
                   `[Memory] Output for node "${edge.source}" not found (may have been evicted). ` +
                   `Cache size: ${nodeOutputs.getStats().maxSize}, current size: ${nodeOutputs.getStats().size}`
                 );
@@ -19978,7 +19979,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             
             // Debug: Log edge connection details
             if (process.env.NODE_ENV === 'development') {
-              console.log(`[AI Agent] Edge from ${edge.source} (${sourceNode?.data?.type}) to ${edge.target}:`, {
+              logger.info(`[AI Agent] Edge from ${edge.source} (${sourceNode?.data?.type}) to ${edge.target}:`, {
                 sourceHandle,
                 targetHandle,
                 isTextFormatter,
@@ -20006,7 +20007,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                     const stringFields = Object.entries(sourceObj).find(([_, v]) => typeof v === 'string');
                     if (stringFields) {
                       fieldValue = stringFields[1];
-                      console.log(`[AI Agent] ⚠️ chat_trigger: sourceHandle '${sourceHandle}' not found, using '${stringFields[0]}' instead`);
+                      logger.info(`[AI Agent] ⚠️ chat_trigger: sourceHandle '${sourceHandle}' not found, using '${stringFields[0]}' instead`);
                     }
                   }
                 } else if (sourceHandle in sourceObj) {
@@ -20015,7 +20016,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                   // Try 'message' as fallback for chat_trigger
                   if ('message' in sourceObj) {
                     fieldValue = sourceObj.message;
-                    console.log(`[AI Agent] ⚠️ chat_trigger: sourceHandle '${sourceHandle}' not found, using 'message' instead`);
+                    logger.info(`[AI Agent] ⚠️ chat_trigger: sourceHandle '${sourceHandle}' not found, using 'message' instead`);
                   }
                 }
               } else {
@@ -20051,10 +20052,10 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               // Text Formatter always outputs { data: string, formatted: string }
               if ('data' in obj && typeof obj.data === 'string') {
                 fieldValue = obj.data;
-                console.log(`[AI Agent] Extracted Text Formatter data field: "${obj.data.substring(0, 50)}..."`);
+                logger.info(`[AI Agent] Extracted Text Formatter data field: "${obj.data.substring(0, 50)}..."`);
               } else if ('formatted' in obj && typeof obj.formatted === 'string') {
                 fieldValue = obj.formatted;
-                console.log(`[AI Agent] Extracted Text Formatter formatted field: "${obj.formatted.substring(0, 50)}..."`);
+                logger.info(`[AI Agent] Extracted Text Formatter formatted field: "${obj.formatted.substring(0, 50)}..."`);
               }
             }
             
@@ -20134,7 +20135,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             const inputKeys = typeof nodeInput === 'object' && nodeInput !== null 
               ? Object.keys(nodeInput as Record<string, unknown>)
               : [];
-            console.log('[ExecuteWorkflow] ✅ Using buildNodeInput result for node:', {
+            logger.info('[ExecuteWorkflow] ✅ Using buildNodeInput result for node:', {
               nodeId: node.id,
               nodeLabel: node.data?.label,
               nodeType: nodeType,
@@ -20166,7 +20167,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             }
           } catch (logUpdateError) {
             // Log error but don't break execution
-            console.error(`[Workflow ${workflowId}] [Node ${node.id}] Failed to update execution logs:`, logUpdateError);
+            logger.error(`[Workflow ${workflowId}] [Node ${node.id}] Failed to update execution logs:`, logUpdateError);
           }
         }
 
@@ -20181,7 +20182,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           // Check if we're resuming and form node output is already set (local resume path)
           const existingFormOutput = nodeOutputs.get(node.id);
           if (existingFormOutput !== undefined) {
-            console.log(`[Form Node] Form node output already set (resuming), skipping pause and using existing output`);
+            logger.info(`[Form Node] Form node output already set (resuming), skipping pause and using existing output`);
             log.status = 'success';
             log.finishedAt = new Date().toISOString();
             log.output = existingFormOutput;
@@ -20203,7 +20204,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           if (inputHasFormSubmissionPayload(executionInput)) {
             const { normalizeFormTriggerOutput } = await import('../core/registry/overrides/form-trigger');
             const formOutput = normalizeFormTriggerOutput(executionInput);
-            console.log(`[Form Node] Submission payload detected in execution input (trigger-service path), skipping pause. Output keys: ${Object.keys(formOutput).join(', ') || '(none)'}`);
+            logger.info(`[Form Node] Submission payload detected in execution input (trigger-service path), skipping pause. Output keys: ${Object.keys(formOutput).join(', ') || '(none)'}`);
             log.status = 'success';
             log.finishedAt = new Date().toISOString();
             log.output = formOutput;
@@ -20213,8 +20214,8 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             continue; // Skip pause → downstream nodes receive form data
           }
           
-          console.log(`[Form Node] Detected form node: ${node.id}, pausing execution...`);
-          console.log(`[Form Node] Execution ID: ${executionId}, Workflow ID: ${workflowId}`);
+          logger.info(`[Form Node] Detected form node: ${node.id}, pausing execution...`);
+          logger.info(`[Form Node] Execution ID: ${executionId}, Workflow ID: ${workflowId}`);
           
           // Update execution status to "waiting" for form submission
           if (executionId) {
@@ -20224,7 +20225,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               waiting_for_node_id: node.id,
             };
             
-            console.log(`[Form Node] Updating execution with:`, updateData);
+            logger.info(`[Form Node] Updating execution with:`, updateData);
             
             const { data: updatedExecution, error: updateError } = await db
               .from('executions')
@@ -20234,9 +20235,9 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               .single();
             
             if (updateError) {
-              console.error('[Form Node] Failed to update execution status:', updateError);
-              console.error('[Form Node] Update data attempted:', updateData);
-              console.error('[Form Node] Execution ID:', executionId);
+              logger.error('[Form Node] Failed to update execution status:', updateError);
+              logger.error('[Form Node] Update data attempted:', updateData);
+              logger.error('[Form Node] Execution ID:', executionId);
               
               // Check if it's a column/type error
               const errorMessage = updateError.message || String(updateError);
@@ -20260,8 +20261,8 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                 code: updateError.code,
               });
             } else {
-              console.log(`[Form Node] Execution ${executionId} successfully set to waiting for form node ${node.id}`);
-              console.log(`[Form Node] Updated execution:`, {
+              logger.info(`[Form Node] Execution ${executionId} successfully set to waiting for form node ${node.id}`);
+              logger.info(`[Form Node] Updated execution:`, {
                 id: updatedExecution?.id,
                 status: updatedExecution?.status,
                 trigger: updatedExecution?.trigger,
@@ -20269,7 +20270,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               });
             }
           } else {
-            console.error('[Form Node] No execution ID available!');
+            logger.error('[Form Node] No execution ID available!');
             return res.status(500).json({
               error: 'Execution error',
               message: 'No execution ID found. Cannot pause workflow.',
@@ -20289,7 +20290,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               .eq('id', executionId);
             
             if (logError) {
-              console.error('[Form Node] Failed to update execution logs:', logError);
+              logger.error('[Form Node] Failed to update execution logs:', logError);
             }
           }
           
@@ -20300,9 +20301,9 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             try {
               const { releaseExecutionLock } = await import('../services/execution/execution-lock');
               await releaseExecutionLock(db, workflowId, executionId);
-              console.log(`[Form Node] ✅ Released execution lock for execution ${executionId} (workflow paused waiting for form)`);
+              logger.info(`[Form Node] ✅ Released execution lock for execution ${executionId} (workflow paused waiting for form)`);
             } catch (lockError) {
-              console.error('[Form Node] Failed to release execution lock:', lockError);
+              logger.error('[Form Node] Failed to release execution lock:', lockError);
               // Non-fatal - continue anyway
             }
           }
@@ -20311,7 +20312,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           // The frontend will handle routing to the form page
           const frontendUrl = process.env.FRONTEND_URL || process.env.VITE_FRONTEND_URL || (process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(':3001', ':8080').replace('/api', '') : '') || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8080');
           if (!frontendUrl && process.env.NODE_ENV === 'production') {
-            console.error('[Form Node] FRONTEND_URL environment variable is required in production');
+            logger.error('[Form Node] FRONTEND_URL environment variable is required in production');
             return res.status(500).json({
               error: 'Configuration error',
               message: 'Frontend URL is not configured. Please set FRONTEND_URL environment variable.',
@@ -20319,7 +20320,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           }
           const formUrl = `${frontendUrl}/form/${workflowId}/${node.id}`;
           if (process.env.NODE_ENV !== 'production') {
-          console.log(`[Form Node] Returning form URL: ${formUrl}`);
+          logger.info(`[Form Node] Returning form URL: ${formUrl}`);
           }
           
           return res.status(200).json({
@@ -20348,7 +20349,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             }, node.id, node.data?.label || node.id, i + 1);
           } catch (eventErr: any) {
             // Non-fatal - log but continue
-            console.warn('[ExecuteWorkflow] ⚠️ NODE_STARTED event failed (non-fatal):', eventErr?.message);
+            logger.warn('[ExecuteWorkflow] ⚠️ NODE_STARTED event failed (non-fatal):', eventErr?.message);
           }
 
           // ✅ CRITICAL: Check if node was already completed (resume logic)
@@ -20361,7 +20362,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
 
           if (existingStep && existingStep.status === 'completed' && existingStep.output_json) {
             // Node already completed - use cached output (resume)
-            console.log(`[Resume] Node ${node.id} (${node.data?.label || node.id}) already completed - using cached output`);
+            logger.info(`[Resume] Node ${node.id} (${node.data?.label || node.id}) already completed - using cached output`);
             output = existingStep.output_json;
             
             // Log resume event
@@ -20538,7 +20539,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                       .eq('id', existingStep.id);
                   }
                 } catch (stepError) {
-                  console.warn('[Retry] Failed to update execution_steps:', stepError);
+                  logger.warn('[Retry] Failed to update execution_steps:', stepError);
                 }
 
                 // Wait before retry
@@ -20602,12 +20603,12 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             .single();
 
             if (stepError) {
-              console.warn(`[Resume] Failed to persist execution step for node ${node.id}:`, stepError);
+              logger.warn(`[Resume] Failed to persist execution step for node ${node.id}:`, stepError);
             } else {
-              console.log(`[Resume] ✅ Persisted execution step for node ${node.id} (${node.data?.label || node.id})`);
+              logger.info(`[Resume] ✅ Persisted execution step for node ${node.id} (${node.data?.label || node.id})`);
             }
           } catch (stepPersistError) {
-            console.warn(`[Resume] Failed to persist execution step:`, stepPersistError);
+            logger.warn(`[Resume] Failed to persist execution step:`, stepPersistError);
           }
           
           // Persist to database with ACID guarantees (central state)
@@ -20620,9 +20621,9 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               output,
               i + 1 // sequence
             );
-            console.log(`[EnterpriseState] ✅ Checkpointed node ${node.id} (${node.data.label})`);
+            logger.info(`[EnterpriseState] ✅ Checkpointed node ${node.id} (${node.data.label})`);
           } catch (persistError: any) {
-            console.error(`[EnterpriseState] ❌ Failed to checkpoint node ${node.id}:`, persistError);
+            logger.error(`[EnterpriseState] ❌ Failed to checkpoint node ${node.id}:`, persistError);
             // Don't fail workflow - log error and continue
             // State is still in memory cache for this execution
           }
@@ -20702,12 +20703,12 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                   }
                   
                   if (sent) {
-                    console.log(`[Workflow ${workflowId}] ✅ Auto-forwarded AI agent response to chat UI (sessionId: ${chatSessionId}): ${outputObj.response_text.substring(0, 100)}...`);
+                    logger.info(`[Workflow ${workflowId}] ✅ Auto-forwarded AI agent response to chat UI (sessionId: ${chatSessionId}): ${outputObj.response_text.substring(0, 100)}...`);
                   } else {
-                    console.warn(`[Workflow ${workflowId}] ⚠️ Failed to forward AI agent response. Session ${chatSessionId} may not be connected.`);
+                    logger.warn(`[Workflow ${workflowId}] ⚠️ Failed to forward AI agent response. Session ${chatSessionId} may not be connected.`);
                   }
                 } catch (chatError: any) {
-                  console.error(`[Workflow ${workflowId}] Error forwarding AI agent response to chat UI:`, chatError?.message || chatError);
+                  logger.error(`[Workflow ${workflowId}] Error forwarding AI agent response to chat UI:`, chatError?.message || chatError);
                   
                   // Debug logging for errors
                   if (process.env.CHAT_DEBUG === 'true') {
@@ -20733,7 +20734,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             if (typeof outputObj.condition === 'boolean') {
               ifElseResults[node.id] = outputObj.condition;
               // ✅ DEBUG: Log stored result
-              console.log('[ExecuteWorkflow] 💾 Stored If/Else result:', {
+              logger.info('[ExecuteWorkflow] 💾 Stored If/Else result:', {
                 nodeId: node.id,
                 nodeLabel: node.data.label,
                 condition: outputObj.condition,
@@ -20743,7 +20744,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                 allResults: { ...ifElseResults },
               });
             } else {
-              console.warn('[ExecuteWorkflow] ⚠️ If/Else output missing boolean condition:', {
+              logger.warn('[ExecuteWorkflow] ⚠️ If/Else output missing boolean condition:', {
                 nodeId: node.id,
                 outputKeys: Object.keys(outputObj),
                 condition: outputObj.condition,
@@ -20781,7 +20782,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             const outputObj = output as Record<string, unknown>;
             if (typeof outputObj._error === 'string' && outputObj._error.length > 0) {
               const softErrorMsg = outputObj._error;
-              console.error(
+              logger.error(
                 `[ExecuteWorkflow] ❌ Node returned soft error: ${node.data.label} (${nodeType}): ${softErrorMsg}`
               );
 
@@ -20858,7 +20859,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
               );
             }
           } catch (selfValidationLogError: any) {
-            console.warn(
+            logger.warn(
               '[ExecuteWorkflow] ⚠️ NODE_SELF_VALIDATION event failed (non-fatal):',
               selfValidationLogError?.message
             );
@@ -20875,7 +20876,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
 
         } catch (error) {
           const errorObj = error instanceof Error ? error : new Error(String(error));
-          console.error(`[Workflow ${workflowId}] [Node ${node.id}] [${node.data.label}] ERROR:`, errorObj.message, errorObj);
+          logger.error(`[Workflow ${workflowId}] [Node ${node.id}] [${node.data.label}] ERROR:`, errorObj.message, errorObj);
 
           log.status = 'failed';
           log.error = errorObj.message;
@@ -20915,7 +20916,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                   workflow.user_id
                 );
               } catch (errorTriggerError) {
-                console.error(`[Workflow ${workflowId}] [Error Trigger ${errorTriggerNode.id}] Execution failed:`, errorTriggerError);
+                logger.error(`[Workflow ${workflowId}] [Error Trigger ${errorTriggerNode.id}] Execution failed:`, errorTriggerError);
               }
             }
           }
@@ -20927,7 +20928,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         // This catch handles errors from the outer try block (line 2853)
         // Errors from node execution (retry logic) are already handled in the inner try-catch
         const errorObj = nodeError instanceof Error ? nodeError : new Error(String(nodeError));
-        console.error(`[Workflow ${workflowId}] [Node ${node.id}] [${node.data.label}] OUTER ERROR:`, errorObj.message, errorObj);
+        logger.error(`[Workflow ${workflowId}] [Node ${node.id}] [${node.data.label}] OUTER ERROR:`, errorObj.message, errorObj);
         
         log.status = 'failed';
         log.error = errorObj.message;
@@ -20967,7 +20968,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
                 workflow.user_id
               );
             } catch (errorTriggerError) {
-              console.error(`[Workflow ${workflowId}] [Error Trigger ${errorTriggerNode.id}] Execution failed:`, errorTriggerError);
+              logger.error(`[Workflow ${workflowId}] [Error Trigger ${errorTriggerNode.id}] Execution failed:`, errorTriggerError);
             }
           }
         }
@@ -20990,7 +20991,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           }
         } catch (logUpdateError) {
           // Log error but don't break execution - logs will be saved at the end anyway
-          console.error('Failed to update execution logs incrementally:', logUpdateError);
+          logger.error('Failed to update execution logs incrementally:', logUpdateError);
         }
       }
     }
@@ -21002,7 +21003,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     if (process.env.ENABLE_MEMORY_LOGGING === 'true') {
       const stats = nodeOutputs.getStats();
       const centralStats = centralState.getCacheStats();
-      console.log(`[Memory] Workflow ${workflowId} cache stats:`, {
+      logger.info(`[Memory] Workflow ${workflowId} cache stats:`, {
         size: stats.size,
         maxSize: stats.maxSize,
         hits: stats.hits,
@@ -21010,12 +21011,12 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         hitRate: `${(stats.hitRate * 100).toFixed(1)}%`,
         evictions: stats.evictions,
       });
-      console.log(`[EnterpriseState] Workflow ${workflowId} central state stats:`, {
+      logger.info(`[EnterpriseState] Workflow ${workflowId} central state stats:`, {
         cacheSize: centralStats.size,
         maxSize: centralStats.maxSize,
         hitRate: `${(centralStats.hitRate * 100).toFixed(1)}%`,
       });
-      console.log(`[Memory] Workflow ${workflowId} memory: ${startMemory.toFixed(2)}MB → ${endMemory.toFixed(2)}MB (Δ${memoryDelta.toFixed(2)}MB)`);
+      logger.info(`[Memory] Workflow ${workflowId} memory: ${startMemory.toFixed(2)}MB → ${endMemory.toFixed(2)}MB (Δ${memoryDelta.toFixed(2)}MB)`);
     }
     
     // Attach captured resolved-input metadata to logs before cache is cleared.
@@ -21120,7 +21121,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
             'unknown'
           );
         } catch (dlqError) {
-          console.error('[ExecuteWorkflow] ❌ Failed to route terminal failure to DLQ:', dlqError);
+          logger.error('[ExecuteWorkflow] ❌ Failed to route terminal failure to DLQ:', dlqError);
         }
       }
     } else {
@@ -21150,9 +21151,9 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           lastHeartbeat: finishedAt,
         }
       );
-      console.log(`[EnterpriseState] ✅ Updated execution ${executionId} to ${finalStatus}`);
+      logger.info(`[EnterpriseState] ✅ Updated execution ${executionId} to ${finalStatus}`);
     } catch (updateError) {
-      console.error(`[EnterpriseState] ❌ Failed to update final status, falling back to direct update:`, updateError);
+      logger.error(`[EnterpriseState] ❌ Failed to update final status, falling back to direct update:`, updateError);
       // Fallback to direct database update
       await db
         .from('executions')
@@ -21222,10 +21223,10 @@ export default async function executeWorkflowHandler(req: Request, res: Response
         nodeExecutions: nodeExecutions,
       });
       
-      console.log(`✅ [Memory] Stored execution in memory system for workflow ${workflowId}`);
+      logger.info(`✅ [Memory] Stored execution in memory system for workflow ${workflowId}`);
     } catch (memoryError) {
       // Graceful degradation: continue even if memory tracking fails
-      console.warn('⚠️  [Memory] Failed to store execution in memory system:', memoryError instanceof Error ? memoryError.message : String(memoryError));
+      logger.warn('⚠️  [Memory] Failed to store execution in memory system:', memoryError instanceof Error ? memoryError.message : String(memoryError));
     }
 
     // ── Execution completion notifications (non-blocking, best-effort) ──────────
@@ -21261,7 +21262,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
     });
   } catch (error) {
     const errorObj = error instanceof Error ? error : new Error(String(error));
-    console.error(`[Workflow ${req.body.workflowId || 'unknown'}] Execute workflow error:`, errorObj.message, errorObj);
+    logger.error(`[Workflow ${req.body.workflowId || 'unknown'}] Execute workflow error:`, errorObj.message, errorObj);
     const errorMessage = errorObj.message;
 
     // ✅ CRITICAL: Release lock on error
@@ -21281,7 +21282,7 @@ export default async function executeWorkflowHandler(req: Request, res: Response
           reason: 'error',
         });
       } catch (cleanupError) {
-        console.error('[ExecuteWorkflow] Failed to cleanup on error:', cleanupError);
+        logger.error('[ExecuteWorkflow] Failed to cleanup on error:', cleanupError);
       }
     }
 

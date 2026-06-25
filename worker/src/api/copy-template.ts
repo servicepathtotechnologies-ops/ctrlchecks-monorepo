@@ -3,6 +3,7 @@
 
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
+import { logger } from '../core/logger';
 
 export default async function copyTemplateHandler(req: Request, res: Response) {
   const db = getDbClient();
@@ -73,7 +74,7 @@ export default async function copyTemplateHandler(req: Request, res: Response) {
       message: 'Template copied successfully'
     });
   } catch (error) {
-    console.error('Copy template error:', error);
+    logger.error('Copy template error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return res.status(500).json({ error: errorMessage });
   }

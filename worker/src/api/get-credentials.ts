@@ -3,6 +3,7 @@
 
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
+import { logger } from '../core/logger';
 
 export default async function getCredentialsHandler(req: Request, res: Response) {
   const db = getDbClient();
@@ -45,7 +46,7 @@ export default async function getCredentialsHandler(req: Request, res: Response)
       credentials: data?.credentials || null,
     });
   } catch (error) {
-    console.error('Error getting credentials:', error);
+    logger.error('Error getting credentials:', error);
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to get credentials',
     });

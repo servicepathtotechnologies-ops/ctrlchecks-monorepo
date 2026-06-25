@@ -9,6 +9,7 @@ import {
   shouldUseTriggerService,
   dispatchWebhookRemote,
 } from '../services/trigger-service-client';
+import { logger } from '../core/logger';
 
 /**
  * Webhook trigger handler
@@ -41,10 +42,10 @@ export default async function webhookTriggerHandler(req: Request, res: Response)
           status: delegated.status,
         });
       }
-      console.warn(`[webhook-trigger] trigger-service returned null for ${workflowId} — local fallback`);
+      logger.warn(`[webhook-trigger] trigger-service returned null for ${workflowId} — local fallback`);
     }
 
-    console.log(`Webhook triggered for workflow: ${workflowId}`);
+    logger.info(`Webhook triggered for workflow: ${workflowId}`);
 
     // Get request body if present
     let input: any = {};
@@ -81,7 +82,7 @@ export default async function webhookTriggerHandler(req: Request, res: Response)
       .single();
 
     if (workflowError || !workflow) {
-      console.error('Workflow not found:', workflowError);
+      logger.error('Workflow not found:', workflowError);
       return res.status(404).json({ error: 'Workflow not found' });
     }
 
@@ -91,17 +92,17 @@ export default async function webhookTriggerHandler(req: Request, res: Response)
     }
 
     if (!workflow.webhook_url) {
-      console.error('Webhook not enabled for workflow:', workflowId);
+      logger.error('Webhook not enabled for workflow:', workflowId);
       return res.status(403).json({ error: 'Webhook not enabled for this workflow' });
     }
 
     if (workflow.status !== 'active') {
-      console.error('Workflow is not active:', workflow.status);
+      logger.error('Workflow is not active:', workflow.status);
       return res.status(400).json({ error: 'Workflow is not active' });
     }
 
     if (!workflow.webhook_secret) {
-      console.error('Webhook secret missing for workflow:', workflowId);
+      logger.error('Webhook secret missing for workflow:', workflowId);
       return res.status(401).json({ error: 'Webhook signature required' });
     }
 
@@ -116,7 +117,7 @@ export default async function webhookTriggerHandler(req: Request, res: Response)
       signatureHeader: req.headers['x-webhook-signature'],
     });
     if (!signatureValid) {
-      console.error('Invalid webhook signature for workflow:', workflowId);
+      logger.error('Invalid webhook signature for workflow:', workflowId);
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
 
@@ -137,11 +138,11 @@ export default async function webhookTriggerHandler(req: Request, res: Response)
       .single();
 
     if (execError || !execution) {
-      console.error('Execution creation error:', execError);
+      logger.error('Execution creation error:', execError);
       return res.status(500).json({ error: 'Failed to create execution' });
     }
 
-    console.log(`Created execution: ${execution.id}`);
+    logger.info(`Created execution: ${execution.id}`);
 
     // Trigger workflow execution asynchronously
     // In production, you might want to use a job queue here
@@ -160,7 +161,7 @@ export default async function webhookTriggerHandler(req: Request, res: Response)
         input: fullInput,
       }),
     }).catch(err => {
-      console.error('Error triggering workflow execution:', err);
+      logger.error('Error triggering workflow execution:', err);
     });
 
     // Return immediate response
@@ -171,7 +172,7 @@ export default async function webhookTriggerHandler(req: Request, res: Response)
       status: 'running',
     });
   } catch (error) {
-    console.error('Webhook trigger error:', error);
+    logger.error('Webhook trigger error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return res.status(500).json({ error: errorMessage });
   }

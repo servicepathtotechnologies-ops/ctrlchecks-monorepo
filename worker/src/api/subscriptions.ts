@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../core/middleware/subscription-auth';
 import { getDbClient } from '../core/database/aws-db-client';
 import { queryAsService } from '../core/database/db-pool';
 import { geminiWalletService } from '../services/ai/gemini-wallet-service';
+import { logger } from '../core/logger';
 
 async function ensureUserExists(userId: string, email: string): Promise<void> {
   const db = getDbClient();
@@ -70,7 +71,7 @@ export async function getCurrentSubscription(req: AuthenticatedRequest, res: Res
           : null,
     });
   } catch (error: any) {
-    console.error('[SubscriptionAPI] getCurrentSubscription error:', error);
+    logger.error('[SubscriptionAPI] getCurrentSubscription error:', error);
     return res.status(500).json({
       error: 'Subscription Fetch Error',
       message: error?.message || 'Failed to fetch current subscription',
@@ -112,7 +113,7 @@ export async function cancelSubscription(req: AuthenticatedRequest, res: Respons
         : null
     });
   } catch (error: any) {
-    console.error('[SubscriptionAPI] cancelSubscription error:', error);
+    logger.error('[SubscriptionAPI] cancelSubscription error:', error);
     return res.status(500).json({
       error: 'Cancellation Error',
       message: error?.message || 'Failed to cancel subscription',
@@ -166,7 +167,7 @@ export async function getSubscriptionHistory(req: AuthenticatedRequest, res: Res
       }))
     });
   } catch (error: any) {
-    console.error('[SubscriptionAPI] getSubscriptionHistory error:', error);
+    logger.error('[SubscriptionAPI] getSubscriptionHistory error:', error);
     return res.status(500).json({
       error: 'History Fetch Error',
       message: error?.message || 'Failed to fetch subscription history',
@@ -198,7 +199,7 @@ export async function getSubscriptionUsage(req: AuthenticatedRequest, res: Respo
       }
     });
   } catch (error: any) {
-    console.error('[SubscriptionAPI] getSubscriptionUsage error:', error);
+    logger.error('[SubscriptionAPI] getSubscriptionUsage error:', error);
     return res.status(500).json({
       error: 'Usage Fetch Error',
       message: error?.message || 'Failed to fetch subscription usage',
@@ -267,7 +268,7 @@ export async function upgradeSubscription(req: AuthenticatedRequest, res: Respon
         : null
     });
   } catch (error: any) {
-    console.error('[SubscriptionAPI] upgradeSubscription error:', error);
+    logger.error('[SubscriptionAPI] upgradeSubscription error:', error);
     return res.status(500).json({
       error: 'Upgrade Error',
       message: error?.message || 'Failed to upgrade subscription',
@@ -358,7 +359,7 @@ export async function adminGetUsers(req: AuthenticatedRequest, res: Response) {
       }
     });
   } catch (error: any) {
-    console.error('[SubscriptionAPI] adminGetUsers error:', error);
+    logger.error('[SubscriptionAPI] adminGetUsers error:', error);
     return res.status(500).json({
       error: 'Admin Users Fetch Error',
       message: error?.message || 'Failed to fetch users',
@@ -410,7 +411,7 @@ export async function adminUpgradeUser(req: AuthenticatedRequest, res: Response)
       subscription: result.subscription
     });
   } catch (error: any) {
-    console.error('[SubscriptionAPI] adminUpgradeUser error:', error);
+    logger.error('[SubscriptionAPI] adminUpgradeUser error:', error);
     return res.status(500).json({
       error: 'Admin Upgrade Error',
       message: error?.message || 'Failed to upgrade user subscription',

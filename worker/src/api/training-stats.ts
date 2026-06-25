@@ -3,6 +3,7 @@
 import { Request, Response } from 'express';
 import { workflowTrainingService } from '../services/ai/workflow-training-service';
 import { trainingMonitor } from '../services/ai/training-monitor';
+import { logger } from '../core/logger';
 
 /**
  * GET /api/training/stats
@@ -27,7 +28,7 @@ export async function getTrainingStats(req: Request, res: Response) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error getting training stats:', error);
+    logger.error('Error getting training stats:', error);
     return res.status(500).json({
       error: 'Failed to get training stats',
       message: error instanceof Error ? error.message : String(error),
@@ -50,7 +51,7 @@ export async function getTrainingCategories(req: Request, res: Response) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error getting training categories:', error);
+    logger.error('Error getting training categories:', error);
     return res.status(500).json({
       error: 'Failed to get training categories',
       message: error instanceof Error ? error.message : String(error),
@@ -82,7 +83,7 @@ export async function getTrainingWorkflows(req: Request, res: Response) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error getting training workflows:', error);
+    logger.error('Error getting training workflows:', error);
     return res.status(500).json({
       error: 'Failed to get training workflows',
       message: error instanceof Error ? error.message : String(error),
@@ -124,7 +125,7 @@ export async function findSimilarWorkflows(req: Request, res: Response) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error finding similar workflows:', error);
+    logger.error('Error finding similar workflows:', error);
     return res.status(500).json({
       error: 'Failed to find similar workflows',
       message: error instanceof Error ? error.message : String(error),
@@ -178,7 +179,7 @@ export async function getTrainingExamples(req: Request, res: Response) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error getting training examples:', error);
+    logger.error('Error getting training examples:', error);
     return res.status(500).json({
       error: 'Failed to get training examples',
       message: error instanceof Error ? error.message : String(error),
@@ -213,7 +214,7 @@ export async function getTrainingUsage(req: Request, res: Response) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error getting training usage:', error);
+    logger.error('Error getting training usage:', error);
     return res.status(500).json({
       error: 'Failed to get training usage',
       message: error instanceof Error ? error.message : String(error),
@@ -245,7 +246,7 @@ export async function reloadTrainingDataset(req: Request, res: Response) {
       });
     }
   } catch (error) {
-    console.error('Error reloading training dataset:', error);
+    logger.error('Error reloading training dataset:', error);
     return res.status(500).json({
       error: 'Failed to reload training dataset',
       message: error instanceof Error ? error.message : String(error),

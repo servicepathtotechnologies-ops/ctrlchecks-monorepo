@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import { handleOAuthCallback } from '../services/oauth-callback-handler';
 import { getDbClient } from '../core/database/aws-db-client';
 import crypto from 'crypto';
+import { logger } from '../core/logger';
 
 /**
  * Type definitions for Twitter OAuth responses
@@ -106,7 +107,7 @@ export async function twitterAuthorizeHandler(req: Request, res: Response) {
 
     res.redirect(authUrl.toString());
   } catch (error) {
-    console.error('Twitter OAuth authorize error:', error);
+    logger.error('Twitter OAuth authorize error:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to initiate Twitter OAuth',
@@ -206,7 +207,7 @@ export async function twitterCallbackHandler(req: Request, res: Response) {
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      console.error('Twitter token exchange error:', errorText);
+      logger.error('Twitter token exchange error:', errorText);
       return res.status(tokenResponse.status).json({
         success: false,
         error: `Failed to exchange code for token: ${errorText}`,
@@ -233,7 +234,7 @@ export async function twitterCallbackHandler(req: Request, res: Response) {
         };
       }
     } catch (userError) {
-      console.warn('Failed to fetch user info (non-fatal):', userError);
+      logger.warn('Failed to fetch user info (non-fatal):', userError);
     }
 
     // Calculate expires_at
@@ -265,7 +266,7 @@ export async function twitterCallbackHandler(req: Request, res: Response) {
       name: userInfo?.name || null,
     });
   } catch (error) {
-    console.error('Twitter OAuth callback error:', error);
+    logger.error('Twitter OAuth callback error:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to process Twitter OAuth callback',

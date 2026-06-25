@@ -129,9 +129,11 @@ try {
 
 import express, { Express, Request, Response } from 'express';
 import { networkInterfaces } from 'os';
+import helmet from 'helmet';
 import { config } from './core/config';
 import { corsMiddleware, getAllowedOrigins } from './core/middleware/cors';
 import { errorHandler, asyncHandler } from './core/middleware/error-handler';
+import { httpLogger } from './core/logger';
 
 // AI: Gemini (GEMINI_API_KEY)
 import { modelManager } from './services/ai/model-manager';
@@ -274,25 +276,25 @@ console.log('[ServerStartup] ✅ Express app created');
 // === REQUEST ID MIDDLEWARE (must be first) ===
 app.use(requestIdMiddleware);
 
-// === ENHANCED LOGGING MIDDLEWARE ===
-app.use((req: Request, res: Response, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    const origin = req.headers.origin || 'no-origin';
-    const logLevel = config.logLevel || 'INFO';
-    const rid = req.requestId || '-';
+// === HELMET: baseline HTTP security headers ===
+// Disabled directives are already handled by the securityHeaders middleware in
+// security.ts (CSP, X-Frame-Options, HSTS, Referrer-Policy, X-XSS-Protection).
+// Cross-Origin-* policies are disabled to preserve OAuth redirect/popup flows.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+    frameguard: false,
+    hsts: false,
+    referrerPolicy: false,
+    xssFilter: false,
+  })
+);
 
-    if (!config.isProduction || logLevel === 'DEBUG' || logLevel === 'INFO') {
-      if (res.statusCode >= 400) {
-        console.error(`[${rid}] ${req.method} ${req.originalUrl} - ${res.statusCode} - ${duration}ms [${origin}]`);
-      } else if (logLevel === 'DEBUG' || !config.isProduction) {
-        console.log(`[${rid}] ${req.method} ${req.originalUrl} - ${res.statusCode} - ${duration}ms [${origin}]`);
-      }
-    }
-  });
-  next();
-});
+// === PINO-HTTP: structured JSON request/response logging with requestId ===
+app.use(httpLogger);
 
 // Middleware
 console.log('[ServerStartup] 🔵 Registering middleware...');
@@ -557,7 +559,7 @@ app.post(
   '/api/execute-workflow',
   distributedRateLimit({
     endpointKey: 'execute-workflow',
-    perUserLimit: 40,
+    perUserLimit: 60,
     globalLimit: 1200,
     windowMs: 60_000,
   }),

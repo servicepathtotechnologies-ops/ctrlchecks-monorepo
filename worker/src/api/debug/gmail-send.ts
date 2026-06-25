@@ -10,6 +10,7 @@
 import { Request, Response } from 'express';
 import { getDbClient } from '../../core/database/aws-db-client';
 import { resolveGmailCredentials, sendGmailEmail, REQUIRED_GMAIL_SCOPES } from '../../shared/gmail-executor';
+import { logger } from '../../core/logger';
 
 export default async function debugGmailSendHandler(req: Request, res: Response) {
   try {
@@ -44,7 +45,7 @@ export default async function debugGmailSendHandler(req: Request, res: Response)
             currentUserId = user.id;
           }
         } catch (authErr) {
-          console.warn('[DebugGmailSend] Auth error (non-fatal):', authErr);
+          logger.warn('[DebugGmailSend] Auth error (non-fatal):', authErr);
         }
       }
     }
@@ -65,7 +66,7 @@ export default async function debugGmailSendHandler(req: Request, res: Response)
     
     userId = workflow.user_id;
     
-    console.log(`[DebugGmailSend] Testing Gmail send for workflow ${workflowId}, node ${nodeId}`);
+    logger.info(`[DebugGmailSend] Testing Gmail send for workflow ${workflowId}, node ${nodeId}`);
     
     // Resolve credentials
     const credential = await resolveGmailCredentials(
@@ -135,7 +136,7 @@ export default async function debugGmailSendHandler(req: Request, res: Response)
       message: 'Credentials resolved successfully. Provide to/subject/body to test send.',
     });
   } catch (error) {
-    console.error('[DebugGmailSend] Error:', error);
+    logger.error('[DebugGmailSend] Error:', error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

@@ -10,6 +10,7 @@ import {
   shouldUseTriggerService,
   dispatchChatRemote,
 } from '../services/trigger-service-client';
+import { logger } from '../core/logger';
 
 /**
  * GET /api/chat-trigger/:workflowId/:nodeId
@@ -69,7 +70,7 @@ export async function getChatConfig(req: Request, res: Response) {
       if (chatNode) {
         const nodeType = chatNode.data?.type || chatNode.type;
         if (nodeType !== "chat_trigger") {
-          console.warn('[Chat Trigger] Found node by ID but type is:', nodeType, 'Expected: chat_trigger');
+          logger.warn('[Chat Trigger] Found node by ID but type is:', nodeType, 'Expected: chat_trigger');
           // Still allow it - might be a custom node that acts as chat trigger
         }
       }
@@ -82,14 +83,14 @@ export async function getChatConfig(req: Request, res: Response) {
       );
       
       if (chatNode) {
-        console.warn('[Chat Trigger] Found chat_trigger node but ID mismatch. Requested:', nodeId, 'Found:', chatNode.id || chatNode.data?.id);
+        logger.warn('[Chat Trigger] Found chat_trigger node but ID mismatch. Requested:', nodeId, 'Found:', chatNode.id || chatNode.data?.id);
         // Use the found node anyway - might be a workflow with only one chat trigger
       }
     }
     
     if (!chatNode) {
-      console.warn('[Chat Trigger] Chat node not found in getChatConfig. NodeId:', nodeId);
-      console.warn('[Chat Trigger] Available nodes:', nodes?.map((n: any) => ({
+      logger.warn('[Chat Trigger] Chat node not found in getChatConfig. NodeId:', nodeId);
+      logger.warn('[Chat Trigger] Available nodes:', nodes?.map((n: any) => ({
         id: n.id || n.data?.id,
         type: n.type || n.data?.type,
         dataType: n.data?.type
@@ -112,7 +113,7 @@ export async function getChatConfig(req: Request, res: Response) {
       },
     });
   } catch (error: any) {
-    console.error('[Chat Trigger] Error getting chat config:', error);
+    logger.error('[Chat Trigger] Error getting chat config:', error);
     res.status(500).json({ 
       error: "Server error", 
       message: "Failed to load chat configuration." 
@@ -151,7 +152,7 @@ export async function submitChatMessage(req: Request, res: Response) {
           status: delegated.status,
         });
       }
-      console.warn(`[chat-trigger] trigger-service returned null for ${workflowId}/${nodeId} — local fallback`);
+      logger.warn(`[chat-trigger] trigger-service returned null for ${workflowId}/${nodeId} — local fallback`);
     }
 
     // Verify workflow exists and is active
@@ -203,7 +204,7 @@ export async function submitChatMessage(req: Request, res: Response) {
       if (chatNode) {
         const nodeType = chatNode.data?.type || chatNode.type;
         if (nodeType !== "chat_trigger") {
-          console.warn('[Chat Trigger] Found node by ID but type is:', nodeType, 'Expected: chat_trigger');
+          logger.warn('[Chat Trigger] Found node by ID but type is:', nodeType, 'Expected: chat_trigger');
           // Still allow it - might be a custom node that acts as chat trigger
         }
       }
@@ -216,14 +217,14 @@ export async function submitChatMessage(req: Request, res: Response) {
       );
       
       if (chatNode) {
-        console.warn('[Chat Trigger] Found chat_trigger node but ID mismatch. Requested:', nodeId, 'Found:', chatNode.id || chatNode.data?.id);
+        logger.warn('[Chat Trigger] Found chat_trigger node but ID mismatch. Requested:', nodeId, 'Found:', chatNode.id || chatNode.data?.id);
         // Use the found node anyway - might be a workflow with only one chat trigger
       }
     }
     
     if (!chatNode) {
-      console.warn('[Chat Trigger] Chat node not found. NodeId:', nodeId);
-      console.warn('[Chat Trigger] Available nodes:', nodes?.map((n: any) => ({
+      logger.warn('[Chat Trigger] Chat node not found. NodeId:', nodeId);
+      logger.warn('[Chat Trigger] Available nodes:', nodes?.map((n: any) => ({
         id: n.id || n.data?.id,
         type: n.type || n.data?.type,
         dataType: n.data?.type,
@@ -239,7 +240,7 @@ export async function submitChatMessage(req: Request, res: Response) {
     // This ensures the chat UI and backend use the same sessionId for WebSocket connections
     // Ignore any provided sessionId and always use the static format for consistency
     const chatSessionId = `${workflowId}_${nodeId}`;
-    console.log(`[Chat Trigger] Using static sessionId format: ${chatSessionId} (workflowId: ${workflowId}, nodeId: ${nodeId})`);
+    logger.info(`[Chat Trigger] Using static sessionId format: ${chatSessionId} (workflowId: ${workflowId}, nodeId: ${nodeId})`);
 
     // Create or ensure chat session exists for WebSocket connections
     try {
@@ -247,10 +248,10 @@ export async function submitChatMessage(req: Request, res: Response) {
       if (!chatServer.hasSession(chatSessionId)) {
         // Create session with a temporary execution ID (will be updated when execution is created)
         chatServer.createSession(chatSessionId, workflowId, `temp-${Date.now()}`, nodeId);
-        console.log(`[Chat Trigger] Created chat session: ${chatSessionId}`);
+        logger.info(`[Chat Trigger] Created chat session: ${chatSessionId}`);
       }
     } catch (sessionError: any) {
-      console.warn(`[Chat Trigger] Failed to create chat session (non-fatal):`, sessionError?.message || sessionError);
+      logger.warn(`[Chat Trigger] Failed to create chat session (non-fatal):`, sessionError?.message || sessionError);
       // Don't fail the request if session creation fails - it will be auto-created when needed
     }
 
@@ -282,14 +283,14 @@ export async function submitChatMessage(req: Request, res: Response) {
       .single();
 
     if (execError || !execution) {
-      console.error('[Chat Trigger] Execution creation error:', execError);
+      logger.error('[Chat Trigger] Execution creation error:', execError);
       return res.status(500).json({ 
         error: "Server error", 
         message: "Failed to create workflow execution. Please try again." 
       });
     }
 
-    console.log(`[Chat Trigger] Created new execution ${execution.id} for message: ${message.trim().substring(0, 50)}...`);
+    logger.info(`[Chat Trigger] Created new execution ${execution.id} for message: ${message.trim().substring(0, 50)}...`);
 
     // Update chat session with actual execution ID
     try {
@@ -298,10 +299,10 @@ export async function submitChatMessage(req: Request, res: Response) {
       if (session) {
         // Update execution ID in session (session object is mutable)
         (session as any).executionId = execution.id;
-        console.log(`[Chat Trigger] Updated chat session ${chatSessionId} with execution ID: ${execution.id}`);
+        logger.info(`[Chat Trigger] Updated chat session ${chatSessionId} with execution ID: ${execution.id}`);
       }
     } catch (sessionError: any) {
-      console.warn(`[Chat Trigger] Failed to update chat session (non-fatal):`, sessionError?.message || sessionError);
+      logger.warn(`[Chat Trigger] Failed to update chat session (non-fatal):`, sessionError?.message || sessionError);
     }
 
     // Trigger workflow execution asynchronously (like webhook does)
@@ -309,7 +310,7 @@ export async function submitChatMessage(req: Request, res: Response) {
       ? `${config.publicBaseUrl}/api/execute-workflow`
       : (process.env.NODE_ENV === 'production' 
           ? (() => {
-              console.error('[Chat Trigger] PUBLIC_BASE_URL is required in production');
+              logger.error('[Chat Trigger] PUBLIC_BASE_URL is required in production');
               return null;
             })()
           : `http://localhost:${config.port}/api/execute-workflow`);
@@ -334,7 +335,7 @@ export async function submitChatMessage(req: Request, res: Response) {
         input: executionInput,
       }),
     }).catch((error) => {
-      console.error('[Chat Trigger] Error triggering workflow execution:', error);
+      logger.error('[Chat Trigger] Error triggering workflow execution:', error);
     });
 
     // Return immediate response (like webhook does)
@@ -345,7 +346,7 @@ export async function submitChatMessage(req: Request, res: Response) {
       status: 'running',
     });
   } catch (error: any) {
-    console.error('[Chat Trigger] Error submitting chat message:', error);
+    logger.error('[Chat Trigger] Error submitting chat message:', error);
     res.status(500).json({ 
       error: "Server error", 
       message: "Failed to process chat message. Please try again." 
@@ -359,7 +360,7 @@ export async function submitChatMessage(req: Request, res: Response) {
 export default async function chatTriggerHandler(req: Request, res: Response) {
   const { workflowId, nodeId } = req.params;
   
-  console.log(`[Chat Trigger] ${req.method} ${req.originalUrl} - workflowId: ${workflowId}, nodeId: ${nodeId}`);
+  logger.info(`[Chat Trigger] ${req.method} ${req.originalUrl} - workflowId: ${workflowId}, nodeId: ${nodeId}`);
 
   if (req.method === 'GET') {
     return getChatConfig(req, res);

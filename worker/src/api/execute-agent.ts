@@ -8,6 +8,7 @@ import { ReasoningEngine, ReasoningContext, Action } from '../shared/reasoning-e
 import { HybridMemoryService } from '../shared/memory';
 import { LLMAdapter } from '../shared/llm-adapter';
 import { config } from '../core/config';
+import { logger } from '../core/logger';
 
 interface WorkflowNode {
   id: string;
@@ -207,7 +208,7 @@ class AgentExecutor {
             );
           }
         } else {
-          console.log('No action available, stopping agent');
+          logger.info('No action available, stopping agent');
           break;
         }
 
@@ -355,7 +356,7 @@ export default async function executeAgent(req: Request, res: Response) {
 
     return res.json(result);
   } catch (error) {
-    console.error("Agent execution error:", error);
+    logger.error("Agent execution error:", error);
     return res.status(500).json({
       error: error instanceof Error ? error.message : "Unknown error",
       status: "failed",

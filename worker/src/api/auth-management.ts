@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AuthenticatedRequest, refreshToken, getSession, invalidateSession, invalidateAllUserSessions, createSession } from '../core/middleware/subscription-auth';
 import { getAuditTrail } from '../core/middleware/subscription-logging';
 import { getSecurityEvents } from '../core/middleware/security';
+import { logger } from '../core/logger';
 
 /**
  * Refresh JWT token endpoint
@@ -44,7 +45,7 @@ export async function getSessionInfo(req: AuthenticatedRequest, res: Response) {
       }
     });
   } catch (error: any) {
-    console.error('[Auth] Get session info error:', error);
+    logger.error('[Auth] Get session info error:', error);
     return res.status(500).json({
       success: false,
       error: error?.message || 'Failed to retrieve session information'
@@ -75,7 +76,7 @@ export async function invalidateCurrentSession(req: AuthenticatedRequest, res: R
       sessionInvalidated: invalidated
     });
   } catch (error: any) {
-    console.error('[Auth] Invalidate session error:', error);
+    logger.error('[Auth] Invalidate session error:', error);
     return res.status(500).json({
       success: false,
       error: error?.message || 'Failed to invalidate session'
@@ -103,7 +104,7 @@ export async function invalidateAllSessions(req: AuthenticatedRequest, res: Resp
       sessionsInvalidated: invalidatedCount
     });
   } catch (error: any) {
-    console.error('[Auth] Invalidate all sessions error:', error);
+    logger.error('[Auth] Invalidate all sessions error:', error);
     return res.status(500).json({
       success: false,
       error: error?.message || 'Failed to invalidate sessions'
@@ -152,7 +153,7 @@ export async function getAuditTrailEndpoint(req: AuthenticatedRequest, res: Resp
       }
     });
   } catch (error: any) {
-    console.error('[Admin] Get audit trail error:', error);
+    logger.error('[Admin] Get audit trail error:', error);
     return res.status(500).json({
       success: false,
       error: error?.message || 'Failed to retrieve audit trail'
@@ -181,7 +182,7 @@ export async function getSecurityEventsEndpoint(req: AuthenticatedRequest, res: 
       count: securityEvents.length
     });
   } catch (error: any) {
-    console.error('[Admin] Get security events error:', error);
+    logger.error('[Admin] Get security events error:', error);
     return res.status(500).json({
       success: false,
       error: error?.message || 'Failed to retrieve security events'
@@ -223,7 +224,7 @@ export async function validateToken(req: AuthenticatedRequest, res: Response) {
       }
     });
   } catch (error: any) {
-    console.error('[Auth] Validate token error:', error);
+    logger.error('[Auth] Validate token error:', error);
     return res.status(500).json({
       success: false,
       valid: false,

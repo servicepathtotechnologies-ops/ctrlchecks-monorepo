@@ -13,6 +13,7 @@ import { getUnifiedMissingItems } from '../services/ai/credential-input-discover
 import { executionPreflight } from '../services/execution-preflight';
 import { getDbClient } from '../core/database/aws-db-client';
 import { credentialRequirementForNode } from '../services/credential-scope-registry';
+import { logger } from '../core/logger';
 
 /** Human-readable provider display names */
 const PROVIDER_DISPLAY: Record<string, string> = {
@@ -60,7 +61,7 @@ export default async function getMissingItemsHandler(req: Request, res: Response
       }
     }
 
-    console.log(`[MissingItems] Getting missing items for workflow ${workflowId}, userId=${userId || 'anonymous'}`);
+    logger.info(`[MissingItems] Getting missing items for workflow ${workflowId}, userId=${userId || 'anonymous'}`);
 
     // ── 1. Standard unified discovery (credentials + inputs) ─────────────
     const missingItems = await getUnifiedMissingItems(workflowId, userId);
@@ -104,7 +105,7 @@ export default async function getMissingItemsHandler(req: Request, res: Response
             for (const failure of preflightResult.failures) {
               const provider = failure.provider.toLowerCase();
               if (!alreadyMissingProviders.has(provider)) {
-                console.log(`[MissingItems] ⚠️ Preflight found missing credential not caught by discovery: ${provider}`);
+                logger.info(`[MissingItems] ⚠️ Preflight found missing credential not caught by discovery: ${provider}`);
                 alreadyMissingProviders.add(provider);
                 missingItems.credentials.push({
                   provider,
@@ -127,7 +128,7 @@ export default async function getMissingItemsHandler(req: Request, res: Response
         }
       } catch (preflightErr) {
         // Non-fatal — return whatever discoverCredentials found
-        console.warn('[MissingItems] Preflight check failed (non-fatal):', preflightErr);
+        logger.warn('[MissingItems] Preflight check failed (non-fatal):', preflightErr);
       }
     }
 
@@ -137,7 +138,7 @@ export default async function getMissingItemsHandler(req: Request, res: Response
       ...missingItems,
     });
   } catch (error: any) {
-    console.error('[MissingItems] Error:', error);
+    logger.error('[MissingItems] Error:', error);
     return res.status(500).json({
       error: 'Failed to get missing items',
       message: error.message || 'Unknown error',

@@ -27,6 +27,7 @@ import type { SwitchContext } from '../../core/orchestration/unified-graph-orche
 import type { CaseNodeMapping } from '../../core/types/unified-node-contract';
 import { compileSummaryV2FromWorkflow } from '../../services/ai/summary-v2-compiler';
 import { validateSummaryV2 } from '../../core/validation/summary-v2-validator';
+import { logger } from '../../core/logger';
 
 /**
  * Stamp _fillMode.fields = 'buildtime_ai_once' on every form/form_trigger node
@@ -267,7 +268,7 @@ export default async function confirmCapabilityWorkflow(req: AuthenticatedReques
             if (!logOutputsWithCaseEdge.has(e.target)) return true; // not a case-targeted log_output — keep
             return legitimateEdgeIds.has(e.id); // only keep legitimate switch/if_else→log_output case edges
           });
-          console.log(`[CapabilityConfirm] log_output fan-in cleanup: ${rebuiltWorkflow.edges.length} → ${cleanedEdges.length} edges`);
+          logger.info(`[CapabilityConfirm] log_output fan-in cleanup: ${rebuiltWorkflow.edges.length} → ${cleanedEdges.length} edges`);
           rebuiltWorkflow = { ...rebuiltWorkflow, edges: cleanedEdges };
         }
       }
@@ -277,12 +278,12 @@ export default async function confirmCapabilityWorkflow(req: AuthenticatedReques
         metadata: populatedWorkflow.metadata,
       };
     } catch (reconcileErr) {
-      console.warn('[CapabilitySelection/confirm] Edge rebuild failed, falling back to reconcile:', reconcileErr);
+      logger.warn('[CapabilitySelection/confirm] Edge rebuild failed, falling back to reconcile:', reconcileErr);
       try {
         const reconciled = unifiedGraphOrchestrator.reconcileWorkflow(populatedWorkflow);
         populatedWorkflow = reconciled.workflow;
       } catch (fallbackErr) {
-        console.warn('[CapabilitySelection/confirm] Fallback reconcile also failed (non-fatal):', fallbackErr);
+        logger.warn('[CapabilitySelection/confirm] Fallback reconcile also failed (non-fatal):', fallbackErr);
       }
     }
 
@@ -296,7 +297,7 @@ export default async function confirmCapabilityWorkflow(req: AuthenticatedReques
       const withDefaults = hydrateRequiredConfigFromRegistryDefaults(populatedWorkflow as any) as any;
       populatedWorkflow = stampFormFieldsAsBuilt(withDefaults as Workflow);
     } catch (stampErr) {
-      console.warn('[CapabilityConfirm] Field stamp failed (non-fatal):', stampErr);
+      logger.warn('[CapabilityConfirm] Field stamp failed (non-fatal):', stampErr);
     }
 
     // Stage: Credential Discovery (Req 6.3) — non-blocking
@@ -359,7 +360,7 @@ export default async function confirmCapabilityWorkflow(req: AuthenticatedReques
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[CapabilitySelection/confirm] Unhandled error:', message);
+    logger.error('[CapabilitySelection/confirm] Unhandled error:', message);
     res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message });
   }
 }

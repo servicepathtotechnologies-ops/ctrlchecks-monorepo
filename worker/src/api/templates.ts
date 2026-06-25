@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
 import { listTemplatesRemote, getTemplateRemote } from '../services/workflow-crud-service-client';
+import { logger } from '../core/logger';
 
 function normalizeSearch(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -20,21 +21,21 @@ export default async function templatesHandler(req: Request, res: Response) {
     try {
       const remote = await getTemplateRemote(templateId);
       if (remote) {
-        console.log(`[Templates] ✅ Delegated GET /templates/${templateId} to workflow-crud-service`);
+        logger.info(`[Templates] ✅ Delegated GET /templates/${templateId} to workflow-crud-service`);
         return res.json(remote);
       }
     } catch (proxyErr) {
-      console.warn('[Templates] workflow-crud-service proxy error — falling back:', proxyErr);
+      logger.warn('[Templates] workflow-crud-service proxy error — falling back:', proxyErr);
     }
   } else {
     try {
       const remote = await listTemplatesRemote({ category, search });
       if (remote) {
-        console.log('[Templates] ✅ Delegated GET /templates to workflow-crud-service');
+        logger.info('[Templates] ✅ Delegated GET /templates to workflow-crud-service');
         return res.json(remote);
       }
     } catch (proxyErr) {
-      console.warn('[Templates] workflow-crud-service proxy error — falling back:', proxyErr);
+      logger.warn('[Templates] workflow-crud-service proxy error — falling back:', proxyErr);
     }
   }
 
@@ -79,7 +80,7 @@ export default async function templatesHandler(req: Request, res: Response) {
 
     return res.json({ templates });
   } catch (error) {
-    console.error('Templates API error:', error);
+    logger.error('Templates API error:', error);
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to fetch templates',
     });

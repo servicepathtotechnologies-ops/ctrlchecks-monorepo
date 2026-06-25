@@ -4,6 +4,7 @@
 import { Request, Response } from 'express';
 import { chatbotPageGenerator } from '../services/chatbot-page-generator';
 import { getDbClient } from '../core/database/aws-db-client';
+import { logger } from '../core/logger';
 
 /**
  * Serve chatbot page for a workflow
@@ -94,7 +95,7 @@ export async function serveChatbotPage(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
   } catch (error) {
-    console.error('Error serving chatbot page:', error);
+    logger.error('Error serving chatbot page:', error);
     res.status(500).send(`
       <html>
         <body style="font-family: sans-serif; padding: 40px; text-align: center;">

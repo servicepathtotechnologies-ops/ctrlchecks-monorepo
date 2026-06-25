@@ -3,6 +3,7 @@ import { paymentService } from '../services/payment-service';
 import { subscriptionService } from '../services/subscription-service';
 import { AuthenticatedRequest } from '../core/middleware/subscription-auth';
 import { getDbClient } from '../core/database/aws-db-client';
+import { logger } from '../core/logger';
 
 /**
  * Ensure user exists in public.users — auto-creates if missing
@@ -39,7 +40,7 @@ export async function getSubscriptionPlans(req: Request, res: Response) {
       }))
     });
   } catch (error: any) {
-    console.error('[PaymentAPI] getSubscriptionPlans error:', error);
+    logger.error('[PaymentAPI] getSubscriptionPlans error:', error);
     return res.status(500).json({
       error: 'Plans Fetch Error',
       message: error?.message || 'Failed to fetch subscription plans',
@@ -114,7 +115,7 @@ export async function createRazorpayOrder(req: AuthenticatedRequest, res: Respon
       }
     });
   } catch (error: any) {
-    console.error('[PaymentAPI] createRazorpayOrder error:', error);
+    logger.error('[PaymentAPI] createRazorpayOrder error:', error);
     return res.status(500).json({
       error: 'Payment Order Failed',
       message: error?.message || 'Failed to create payment order',
@@ -165,7 +166,7 @@ export async function verifyRazorpayPayment(req: AuthenticatedRequest, res: Resp
       subscription: result.subscription || null
     });
   } catch (error: any) {
-    console.error('[PaymentAPI] verifyRazorpayPayment error:', error);
+    logger.error('[PaymentAPI] verifyRazorpayPayment error:', error);
     return res.status(500).json({
       error: 'Payment Verification Error',
       message: error?.message || 'Payment verification failed',
@@ -190,7 +191,7 @@ export async function handleRazorpayWebhook(req: Request, res: Response) {
 
     return res.json({ success: true, message: result.message });
   } catch (error: any) {
-    console.error('[PaymentWebhook] error:', error);
+    logger.error('[PaymentWebhook] error:', error);
     return res.status(500).json({ error: 'Webhook processing failed' });
   }
 }

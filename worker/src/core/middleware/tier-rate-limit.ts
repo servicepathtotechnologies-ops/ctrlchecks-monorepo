@@ -25,7 +25,7 @@ export interface TierLimits {
 }
 
 const TIER_LIMITS: Record<string, TierLimits> = {
-  free:       { executePerMin: 40,  generatePerMin: 20  },
+  free:       { executePerMin: 60,  generatePerMin: 20  },
   paid:       { executePerMin: 100, generatePerMin: 50  },
   enterprise: { executePerMin: 200, generatePerMin: 100 },
 };

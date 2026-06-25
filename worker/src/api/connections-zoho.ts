@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
 import { getZohoApiBaseUrl, ZohoRegion } from '../shared/zoho-oauth';
+import { logger } from '../core/logger';
 
 /**
  * Zoho connection utilities:
@@ -41,7 +42,7 @@ export async function zohoStatusHandler(req: Request, res: Response) {
       .maybeSingle();
 
     if (tokenError && tokenError.code !== 'PGRST116') {
-      console.error('[ZohoStatus] Error querying zoho_oauth_tokens:', tokenError.message);
+      logger.error('[ZohoStatus] Error querying zoho_oauth_tokens:', tokenError.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to load Zoho connection status',
@@ -69,7 +70,7 @@ export async function zohoStatusHandler(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error('[ZohoStatus] Unexpected error:', error);
+    logger.error('[ZohoStatus] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -128,11 +129,11 @@ export async function zohoConnectHandler(req: Request, res: Response) {
       if (!testResponse.ok && testResponse.status !== 404) {
         // 404 is okay for org endpoint if CRM isn't set up, but other errors indicate invalid token
         const errorText = await testResponse.text();
-        console.warn('[ZohoConnect] Token test failed:', testResponse.status, errorText.slice(0, 200));
+        logger.warn('[ZohoConnect] Token test failed:', testResponse.status, errorText.slice(0, 200));
         // Still allow saving - token might be valid for other services
       }
     } catch (testError) {
-      console.warn('[ZohoConnect] Token test error (non-fatal):', testError);
+      logger.warn('[ZohoConnect] Token test error (non-fatal):', testError);
       // Continue anyway - network issues shouldn't block credential saving
     }
 
@@ -156,7 +157,7 @@ export async function zohoConnectHandler(req: Request, res: Response) {
       .single();
 
     if (upsertError) {
-      console.error('[ZohoConnect] Error upserting zoho_oauth_tokens:', upsertError.message);
+      logger.error('[ZohoConnect] Error upserting zoho_oauth_tokens:', upsertError.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to save Zoho credentials',
@@ -182,7 +183,7 @@ export async function zohoConnectHandler(req: Request, res: Response) {
       });
 
     if (vaultError) {
-      console.warn('[ZohoConnect] Error upserting user_credentials (non-fatal):', vaultError.message);
+      logger.warn('[ZohoConnect] Error upserting user_credentials (non-fatal):', vaultError.message);
       // Non-fatal - tokens are already saved
     }
 
@@ -195,7 +196,7 @@ export async function zohoConnectHandler(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error('[ZohoConnect] Unexpected error:', error);
+    logger.error('[ZohoConnect] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -273,7 +274,7 @@ export async function zohoTestHandler(req: Request, res: Response) {
         break;
       } else {
         lastErrText = await response.text();
-        console.warn(`[ZohoTest] ${ep.name} error:`, status, lastErrText.slice(0, 200));
+        logger.warn(`[ZohoTest] ${ep.name} error:`, status, lastErrText.slice(0, 200));
       }
     }
 
@@ -295,7 +296,7 @@ export async function zohoTestHandler(req: Request, res: Response) {
       testResult: testResult || { message: 'Connection verified (endpoint returned 404 - service may not be configured)' },
     });
   } catch (error) {
-    console.error('[ZohoTest] Unexpected error:', error);
+    logger.error('[ZohoTest] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -334,7 +335,7 @@ export async function zohoDisconnectHandler(req: Request, res: Response) {
       .eq('user_id', userId);
 
     if (tokenError) {
-      console.error('[ZohoDisconnect] Error deleting zoho_oauth_tokens:', tokenError.message);
+      logger.error('[ZohoDisconnect] Error deleting zoho_oauth_tokens:', tokenError.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to delete Zoho tokens',
@@ -349,7 +350,7 @@ export async function zohoDisconnectHandler(req: Request, res: Response) {
       .eq('service', 'zoho');
 
     if (vaultError && vaultError.code !== 'PGRST116') {
-      console.error('[ZohoDisconnect] Error deleting user_credentials (zoho):', vaultError.message);
+      logger.error('[ZohoDisconnect] Error deleting user_credentials (zoho):', vaultError.message);
       // Non-fatal; tokens are already removed
     }
 
@@ -358,7 +359,7 @@ export async function zohoDisconnectHandler(req: Request, res: Response) {
       message: 'Zoho account disconnected successfully',
     });
   } catch (error) {
-    console.error('[ZohoDisconnect] Unexpected error:', error);
+    logger.error('[ZohoDisconnect] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',

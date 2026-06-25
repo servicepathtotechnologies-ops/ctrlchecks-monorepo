@@ -13,6 +13,7 @@ import { StorageManager } from '../services/workflow-executor/distributed/storag
 import { createObjectStorageService } from '../services/workflow-executor/object-storage-service';
 import { ErrorCode } from '../core/utils/error-codes';
 import { normalizeIfElseConfig } from '../core/utils/if-else-conditions';
+import { logger } from '../core/logger';
 
 /**
  * Normalize If/Else node conditions field
@@ -68,7 +69,7 @@ export default async function distributedExecuteWorkflow(
 
     const isConfirmed = workflow.confirmed === true || workflow.status === 'active';
     if (!isConfirmed) {
-      console.error(`[DistributedExecuteWorkflow] ❌ Execution blocked - Workflow ${workflowId} is not confirmed`);
+      logger.error(`[DistributedExecuteWorkflow] ❌ Execution blocked - Workflow ${workflowId} is not confirmed`);
       res.status(403).json({
         code: 'WORKFLOW_NOT_CONFIRMED',
         error: 'Workflow execution not allowed',
@@ -237,14 +238,14 @@ export default async function distributedExecuteWorkflow(
       executionValidationMissingCredentials: executionValidation.missingCredentials,
     };
 
-    console.log('[DistributedExecuteWorkflow] Readiness check:', JSON.stringify(readinessCheck, null, 2));
+    logger.info('[DistributedExecuteWorkflow] Readiness check:', JSON.stringify(readinessCheck, null, 2));
 
     const isStatusReadyLegacy = workflowStatus === 'ready' && executionValidation.ready && allMissingInputs.length === 0;
     const credentialsAttached = missingCredentialsCount === 0;
 
     if (!isStatusReady && !isStatusReadyLegacy) {
       if (executionValidation.ready && allMissingInputs.length === 0 && missingCredentialsCount === 0) {
-        console.log(`[DistributedExecuteWorkflow] Validation passes but phase is "${workflowPhase}" - updating to active, phase to ready_for_execution`);
+        logger.info(`[DistributedExecuteWorkflow] Validation passes but phase is "${workflowPhase}" - updating to active, phase to ready_for_execution`);
         
         // ✅ CRITICAL: Update status to 'active' (valid enum) and phase to 'ready_for_execution' (TEXT)
         const { data: statusUpdateData, error: statusUpdateError } = await db
@@ -259,7 +260,7 @@ export default async function distributedExecuteWorkflow(
           .single();
 
         if (statusUpdateError) {
-          console.error('[DistributedExecuteWorkflow] ❌ Failed to update workflow status:', {
+          logger.error('[DistributedExecuteWorkflow] ❌ Failed to update workflow status:', {
             workflowId,
             error: statusUpdateError.message,
             errorCode: statusUpdateError.code,
@@ -275,7 +276,7 @@ export default async function distributedExecuteWorkflow(
 
         // ✅ CRITICAL: Verify status was actually persisted
         if (!statusUpdateData || statusUpdateData.status !== 'active' || statusUpdateData.phase !== 'ready_for_execution') {
-          console.error('[DistributedExecuteWorkflow] ❌ Status update did not persist:', {
+          logger.error('[DistributedExecuteWorkflow] ❌ Status update did not persist:', {
             workflowId,
             expectedStatus: 'active',
             expectedPhase: 'ready_for_execution',
@@ -291,7 +292,7 @@ export default async function distributedExecuteWorkflow(
           return;
         }
 
-        console.log(`[DistributedExecuteWorkflow] ✅ Status updated to active, phase to ready_for_execution for workflow ${workflowId}`);
+        logger.info(`[DistributedExecuteWorkflow] ✅ Status updated to active, phase to ready_for_execution for workflow ${workflowId}`);
       } else {
         res.status(400).json({
           code: ErrorCode.EXECUTION_NOT_READY,
@@ -421,7 +422,7 @@ export default async function distributedExecuteWorkflow(
       }
 
       // Stale or missing execution — clear the lock before starting
-      console.log(`[DistributedExecuteWorkflow] Clearing stale lock for execution ${existingActiveId}`);
+      logger.info(`[DistributedExecuteWorkflow] Clearing stale lock for execution ${existingActiveId}`);
       await db
         .from('workflows')
         .update({ active_execution_id: null, updated_at: new Date().toISOString() })
@@ -518,7 +519,7 @@ export default async function distributedExecuteWorkflow(
       };
 
       try {
-        console.log(`[DistributedExecute] 🔵 Starting background execution for ${executionId}`);
+        logger.info(`[DistributedExecute] 🔵 Starting background execution for ${executionId}`);
         const { default: executeWorkflow } = await import('./execute-workflow');
         await executeWorkflow(
           {
@@ -540,7 +541,7 @@ export default async function distributedExecuteWorkflow(
             setHeader: () => {},
           } as any
         );
-        console.log(`[DistributedExecute] ✅ Background execution finished for ${executionId}`);
+        logger.info(`[DistributedExecute] ✅ Background execution finished for ${executionId}`);
 
         // Always invalidate Redis cache so the frontend sees the final status
         await invalidateCache();
@@ -554,7 +555,7 @@ export default async function distributedExecuteWorkflow(
             .eq('id', executionId)
             .single();
           if (currentExec?.status === 'running') {
-            console.warn(`[DistributedExecute] ⚠️ Execution ${executionId} still "running" after execute-workflow returned — marking failed`);
+            logger.warn(`[DistributedExecute] ⚠️ Execution ${executionId} still "running" after execute-workflow returned — marking failed`);
 
             // Look for a specific error in execution_steps before using a generic message
             let failureError = 'Execution stopped unexpectedly. Please try again.';
@@ -592,7 +593,7 @@ export default async function distributedExecuteWorkflow(
           }
         } catch (_) {}
       } catch (bgErr: any) {
-        console.error(`[DistributedExecute] ❌ Background execution failed for ${executionId}:`, bgErr?.message);
+        logger.error(`[DistributedExecute] ❌ Background execution failed for ${executionId}:`, bgErr?.message);
         try {
           await db
             .from('executions')
@@ -613,7 +614,7 @@ export default async function distributedExecuteWorkflow(
       }
     });
   } catch (error: any) {
-    console.error('[DistributedExecuteWorkflow] ❌ Error:', error);
+    logger.error('[DistributedExecuteWorkflow] ❌ Error:', error);
     
     // ✅ CRITICAL: Release lock on error if execution was created
     if (workflowId) {
@@ -629,7 +630,7 @@ export default async function distributedExecuteWorkflow(
           await releaseExecutionLock(db, workflowId, workflow.active_execution_id);
         }
       } catch (cleanupError) {
-        console.error('[DistributedExecuteWorkflow] Failed to cleanup on error:', cleanupError);
+        logger.error('[DistributedExecuteWorkflow] Failed to cleanup on error:', cleanupError);
       }
     }
     
@@ -682,7 +683,7 @@ export async function getExecutionStatus(
       .order('sequence', { ascending: true });
 
     if (stepsError) {
-      console.error('[GetExecutionStatus] Error fetching steps:', stepsError);
+      logger.error('[GetExecutionStatus] Error fetching steps:', stepsError);
     }
 
     const response: Record<string, unknown> = {
@@ -710,7 +711,7 @@ export async function getExecutionStatus(
     }
     res.json(response);
   } catch (error: any) {
-    console.error('[GetExecutionStatus] ❌ Error:', error);
+    logger.error('[GetExecutionStatus] ❌ Error:', error);
     res.status(500).json({
       error: error.message || 'Failed to get execution status',
     });

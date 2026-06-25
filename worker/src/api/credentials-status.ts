@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { resolveCredentialDryRun, formatCredentialError } from '../services/credential-resolver';
 import { requiredScopesForProvider, normalizeProvider } from '../services/credential-scope-registry';
+import { logger } from '../core/logger';
 
 export async function credentialStatusHandler(req: Request, res: Response) {
   const user = (req as any).user;
@@ -28,7 +29,7 @@ export async function credentialStatusHandler(req: Request, res: Response) {
     });
   } catch (error) {
     const formatted = formatCredentialError(error, 'connection_status');
-    console.warn('[CredentialStatus] Credential is not runnable', formatted);
+    logger.warn('[CredentialStatus] Credential is not runnable', formatted);
     return res.json({
       connected: false,
       provider,

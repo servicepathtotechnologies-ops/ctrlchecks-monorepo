@@ -26,6 +26,7 @@ import {
 import { unifiedNodeRegistry } from '../core/registry/unified-node-registry';
 import { isCredentialOwnership } from '../core/utils/field-ownership';
 import { buildSyncedGraphPayload, resolveWorkflowGraphState } from './workflow-graph-state';
+import { logger } from '../core/logger';
 
 /** Wizard sends `cred_<nodeId>_<fieldName>` — allow through vault-key filter; injectCredentials maps per node. */
 function credentialPayloadKeyMatchesWorkflowNode(key: string, nodeIds: string[]): boolean {
@@ -130,7 +131,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
     }
     
     // Empty credentials object is valid (workflow may not need credentials)
-    console.log(`[AttachCredentials] Received ${Object.keys(credentials).length} credential(s) for workflow ${workflowId}`);
+    logger.info(`[AttachCredentials] Received ${Object.keys(credentials).length} credential(s) for workflow ${workflowId}`);
 
     // Get current user
     const db = getDbClient();
@@ -146,7 +147,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
             userId = user.id;
           }
         } catch (authErr) {
-          console.warn('[AttachCredentials] Auth error (non-fatal):', authErr);
+          logger.warn('[AttachCredentials] Auth error (non-fatal):', authErr);
         }
       }
     }
@@ -159,7 +160,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       .single();
 
     if (workflowError || !workflow) {
-      console.error('[AttachCredentials] Workflow fetch error:', workflowError);
+      logger.error('[AttachCredentials] Workflow fetch error:', workflowError);
       return res.status(404).json(
         createError(
           ErrorCode.WORKFLOW_NOT_FOUND,
@@ -222,14 +223,14 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       );
     }
 
-    console.log(`[AttachCredentials] ✅ Phase check passed: ${currentPhase}`);
+    logger.info(`[AttachCredentials] ✅ Phase check passed: ${currentPhase}`);
 
     // Phase transitions are decided after readiness validation (no eager phase mutation).
 
     // Post-freeze: keep graph immutable (no rewiring/normalization). Only run lightweight safety checks.
     const resolvedGraphState = resolveWorkflowGraphState(workflow);
     if (resolvedGraphState.needsHealing) {
-      console.warn('[AttachCredentials] ⚠️ Workflow graph state needed healing:', {
+      logger.warn('[AttachCredentials] ⚠️ Workflow graph state needed healing:', {
         workflowId,
         source: resolvedGraphState.source,
         inSync: resolvedGraphState.inSync,
@@ -290,7 +291,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
         normalizedGraph.nodes,
         normalizedGraph.edges
       );
-      console.log('[AttachCredentials] 📌 Baseline topology fingerprint:', {
+      logger.info('[AttachCredentials] 📌 Baseline topology fingerprint:', {
         workflowId,
         fingerprint: baselineTopologyFingerprint.fingerprint,
         nodeCount: baselineTopologyFingerprint.nodeIdsSorted.length,
@@ -333,7 +334,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       const nodeScopedCred = credentialPayloadKeyMatchesWorkflowNode(key, graphNodeIds);
       const scoped = parseScopedCredentialField(key, graphNodeIds);
       if (!allowedVaultKeys.has(normalizedKey) && !nodeScopedCred) {
-        console.warn(`[AttachCredentials] Rejected unknown/non-credential key "${key}"`);
+        logger.warn(`[AttachCredentials] Rejected unknown/non-credential key "${key}"`);
         rejectedCredentialKeys.push(key);
         continue;
       }
@@ -348,7 +349,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       }
       // Skip if this credential is already satisfied in vault (vault keys only — node-scoped answers always apply)
       if (!nodeScopedCred && satisfiedVaultKeys.has(normalizedKey)) {
-        console.log(`[AttachCredentials] Skipping ${key} - already satisfied in vault`);
+        logger.info(`[AttachCredentials] Skipping ${key} - already satisfied in vault`);
         continue;
       }
 
@@ -379,7 +380,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       } else if (value && typeof value === 'object') {
         credentialsToInject[key] = value as Record<string, any>;
       } else {
-        console.warn(`[AttachCredentials] Skipping ${key} - unsupported credential value type: ${typeof value}`);
+        logger.warn(`[AttachCredentials] Skipping ${key} - unsupported credential value type: ${typeof value}`);
       }
     }
 
@@ -404,7 +405,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
     let injectionResult: any;
     
     if (Object.keys(credentialsToInject).length > 0) {
-      console.log(`[AttachCredentials] Injecting ${Object.keys(credentialsToInject).length} credential(s) into workflow ${workflowId}...`);
+      logger.info(`[AttachCredentials] Injecting ${Object.keys(credentialsToInject).length} credential(s) into workflow ${workflowId}...`);
       injectionResult = await workflowLifecycleManager.injectCredentials(
         {
           nodes: normalizedGraph.nodes,
@@ -415,7 +416,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       );
 
       if (!injectionResult.success) {
-        console.error('[AttachCredentials] ❌ Credential injection failed:', {
+        logger.error('[AttachCredentials] ❌ Credential injection failed:', {
           workflowId,
           errors: injectionResult.errors,
           errorCount: injectionResult.errors?.length || 0,
@@ -433,7 +434,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
         );
       }
       
-      console.log('[AttachCredentials] ✅ Credential injection successful');
+      logger.info('[AttachCredentials] ✅ Credential injection successful');
 
     // Post-freeze graph must remain topology-equivalent.
     finalNormalizedGraph = {
@@ -441,7 +442,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       edges: injectionResult.workflow?.edges || [],
     };
 
-    console.log('[AttachCredentials] ✅ Graph normalized (topologyPreserve):', {
+    logger.info('[AttachCredentials] ✅ Graph normalized (topologyPreserve):', {
       nodeCount: finalNormalizedGraph.nodes.length,
       edgeCount: finalNormalizedGraph.edges.length,
       triggerNodes: finalNormalizedGraph.nodes.filter((n: any) => {
@@ -465,7 +466,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
     });
     } else {
       // No credentials to inject - use existing graph
-      console.log(`[AttachCredentials] No credentials to inject - using existing workflow graph`);
+      logger.info(`[AttachCredentials] No credentials to inject - using existing workflow graph`);
       finalNormalizedGraph = normalizedGraph;
       injectionResult = {
         success: true,
@@ -509,7 +510,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
     );
     if (finalTopologyFingerprint.fingerprint !== baselineTopologyFingerprint.fingerprint) {
       const diff = diffWorkflowTopology(baselineTopologyFingerprint, finalTopologyFingerprint);
-      console.error('[AttachCredentials] ❌ Topology mutation blocked:', { workflowId, diff });
+      logger.error('[AttachCredentials] ❌ Topology mutation blocked:', { workflowId, diff });
       return res.status(409).json(
         createError(
           ErrorCode.TOPOLOGY_MUTATION_BLOCKED_ATTACH_CREDENTIALS,
@@ -549,7 +550,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       .single();
 
     if (updateError) {
-      console.error('[AttachCredentials] ❌ Workflow update error:', {
+      logger.error('[AttachCredentials] ❌ Workflow update error:', {
         workflowId,
         error: updateError.message,
         errorCode: updateError.code,
@@ -566,7 +567,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
 
     // ✅ CRITICAL: Verify status was actually persisted
     if (!updateData || updateData.status !== finalStatus || updateData.phase !== finalPhase) {
-      console.error('[AttachCredentials] ❌ Status update did not persist:', {
+      logger.error('[AttachCredentials] ❌ Status update did not persist:', {
         workflowId,
         expectedStatus: finalStatus,
         expectedPhase: finalPhase,
@@ -588,11 +589,11 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
       );
     }
 
-    console.log(`[AttachCredentials] ✅ Workflow updated - graph saved, status set to ${finalStatus}, phase set to ${finalPhase} for workflow ${workflowId}`);
+    logger.info(`[AttachCredentials] ✅ Workflow updated - graph saved, status set to ${finalStatus}, phase set to ${finalPhase} for workflow ${workflowId}`);
 
     // ✅ AUTO-RUN: If workflow is ready, mark it for auto-execution
     if (validationResult.ready) {
-      console.log(`[AttachCredentials] ✅ Workflow ${workflowId} marked as ready_for_execution - will auto-run`);
+      logger.info(`[AttachCredentials] ✅ Workflow ${workflowId} marked as ready_for_execution - will auto-run`);
 
       // ✅ CRITICAL: Audit trail - log credentials attached and ready events
       try {
@@ -621,7 +622,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
             },
           ]);
       } catch (auditError) {
-        console.warn('[AttachCredentials] Failed to log audit events:', auditError);
+        logger.warn('[AttachCredentials] Failed to log audit events:', auditError);
       }
     } else {
       // ✅ CRITICAL: Audit trail - log credentials attached even if not ready
@@ -640,7 +641,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
             created_at: new Date().toISOString(),
           });
       } catch (auditError) {
-        console.warn('[AttachCredentials] Failed to log audit event:', auditError);
+        logger.warn('[AttachCredentials] Failed to log audit event:', auditError);
       }
     }
 
@@ -659,7 +660,7 @@ export default async function attachCredentialsHandler(req: Request, res: Respon
           validationResult.missingCredentials.join(', '),
     });
   } catch (error) {
-    console.error('[AttachCredentials] Error:', error);
+    logger.error('[AttachCredentials] Error:', error);
     return res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Unknown error',

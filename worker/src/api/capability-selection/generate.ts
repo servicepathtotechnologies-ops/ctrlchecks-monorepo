@@ -23,6 +23,7 @@ import type {
   CapabilityContainer,
   NodeSelection,
 } from '../../services/ai/stages/capability-types';
+import { logger } from '../../core/logger';
 
 export default async function generateCapabilityWorkflow(req: Request, res: Response): Promise<void> {
   const startedAt = Date.now();
@@ -169,7 +170,7 @@ export default async function generateCapabilityWorkflow(req: Request, res: Resp
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[CapabilitySelection/generate] Unhandled error:', message);
+    logger.error('[CapabilitySelection/generate] Unhandled error:', message);
     const body = req.body as Record<string, unknown>;
     res.status(500).json({
       ok: false,

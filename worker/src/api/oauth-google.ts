@@ -5,6 +5,7 @@ import { config } from '../core/config';
 import { ensureUserRows } from '../core/database/ensure-user';
 import { resolveUserIdByEmail } from '../shared/credential-resolver';
 import { handleOAuthCallback } from '../services/oauth-callback-handler';
+import { logger } from '../core/logger';
 
 function googleClientId() {
   return process.env.GOOGLE_OAUTH_CLIENT_ID || config.googleOAuthClientId || '';
@@ -157,7 +158,7 @@ export async function googleOAuthCallback(req: Request, res: Response) {
       `${frontendUrl()}/auth/google/callback?success=true&email=${encodeURIComponent(profile.email || '')}&return_to=${returnUrl}`
     );
   } catch (err: any) {
-    console.error('[GoogleOAuth] Error:', err.message);
+    logger.error('[GoogleOAuth] Error:', err.message);
     return res.redirect(`${frontendUrl()}/auth/google/callback?error=${encodeURIComponent(err.message || 'oauth_failed')}`);
   }
 }
@@ -215,10 +216,10 @@ export async function googleDisconnectHandler(req: Request, res: Response) {
       [ids],
     ).catch(() => { /* non-fatal */ });
 
-    console.log(`[GoogleDisconnect] Removed Google tokens for user ${currentUserId} (checked ${ids.length} sub(s))`);
+    logger.info(`[GoogleDisconnect] Removed Google tokens for user ${currentUserId} (checked ${ids.length} sub(s))`);
     return res.json({ success: true, message: 'Google account disconnected successfully' });
   } catch (err: any) {
-    console.error('[GoogleDisconnect] Error:', err.message);
+    logger.error('[GoogleDisconnect] Error:', err.message);
     return res.status(500).json({ success: false, error: 'Failed to disconnect Google account' });
   }
 }

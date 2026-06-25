@@ -17,6 +17,7 @@
 
 import { Request, Response } from 'express';
 import { queryAsService } from '../core/database/db-pool';
+import { logger } from '../core/logger';
 
 function getUserId(req: Request): string | null {
   return (req as any).user?.id || (req as any).user?.sub || null;
@@ -95,7 +96,7 @@ export async function transferWorkflowOwnership(req: Request, res: Response) {
       [currentUserId, workflowId]
     );
 
-    console.log(`[WorkflowTransfer] Workflow ${workflowId} ("${workflow.title}") transferred from ${workflow.user_id} → ${currentUserId}`);
+    logger.info(`[WorkflowTransfer] Workflow ${workflowId} ("${workflow.title}") transferred from ${workflow.user_id} → ${currentUserId}`);
 
     return res.json({
       success: true,
@@ -103,7 +104,7 @@ export async function transferWorkflowOwnership(req: Request, res: Response) {
       workflowId,
     });
   } catch (error: any) {
-    console.error('[WorkflowTransfer] Error:', error.message);
+    logger.error('[WorkflowTransfer] Error:', error.message);
     return res.status(500).json({ success: false, error: 'Transfer failed' });
   }
 }
@@ -149,7 +150,7 @@ export async function transferAllWorkflows(req: Request, res: Response) {
       [currentUserId, ...peerIds]
     );
 
-    console.log(`[WorkflowTransfer] Bulk transfer: ${total} workflows from [${peerIds.join(', ')}] → ${currentUserId} (email: ${currentEmail})`);
+    logger.info(`[WorkflowTransfer] Bulk transfer: ${total} workflows from [${peerIds.join(', ')}] → ${currentUserId} (email: ${currentEmail})`);
 
     return res.json({
       success: true,
@@ -157,7 +158,7 @@ export async function transferAllWorkflows(req: Request, res: Response) {
       message: `${total} workflow${total !== 1 ? 's' : ''} transferred to your account`,
     });
   } catch (error: any) {
-    console.error('[WorkflowTransfer] Bulk transfer error:', error.message);
+    logger.error('[WorkflowTransfer] Bulk transfer error:', error.message);
     return res.status(500).json({ success: false, error: 'Bulk transfer failed' });
   }
 }

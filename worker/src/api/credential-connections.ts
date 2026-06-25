@@ -5,6 +5,7 @@ import type { CredentialAuthRequest } from '../credentials-system/execution-auth
 import { nodeRegistryService } from '../credentials-system/node-registry-service';
 import { oauthService } from '../credentials-system/oauth-service';
 import { getCacheRedisClient, invalidateMissingItemsCache, invalidateAllMissingItemsCaches } from '../middleware/redisGetCache';
+import { logger } from '../core/logger';
 
 function userId(req: Request): string {
   const id = (req as any).user?.id || req.query.user_id || req.body?.userId;
@@ -64,7 +65,7 @@ export async function listConnectionsHandler(req: Request, res: Response) {
       return res.json({ connections: remote, source: 'credential-service' });
     }
     // Remote returned null (error/timeout) → fall through to local path
-    console.warn('[listConnectionsHandler] Credential-service fallback for user:', uid);
+    logger.warn('[listConnectionsHandler] Credential-service fallback for user:', uid);
   }
 
   res.json({ connections: await connectionService.listConnections(uid) });
@@ -94,7 +95,7 @@ export async function createConnectionHandler(req: Request, res: Response) {
     if (isCredentialVaultWritesDisabled()) {
       return res.status(503).json({ error: 'Credential service unavailable', code: 'CREDENTIAL_SERVICE_UNAVAILABLE' });
     }
-    console.warn('[createConnectionHandler] Credential-service fallback for user:', uid);
+    logger.warn('[createConnectionHandler] Credential-service fallback for user:', uid);
   }
 
   const connection = await connectionService.createConnection({
@@ -133,7 +134,7 @@ export async function updateConnectionHandler(req: Request, res: Response) {
     if (isCredentialVaultWritesDisabled()) {
       return res.status(503).json({ error: 'Credential service unavailable', code: 'CREDENTIAL_SERVICE_UNAVAILABLE' });
     }
-    console.warn('[updateConnectionHandler] Credential-service fallback for user:', uid);
+    logger.warn('[updateConnectionHandler] Credential-service fallback for user:', uid);
   }
 
   const connection = await connectionService.updateConnection(uid, id, {
@@ -160,7 +161,7 @@ export async function deleteConnectionHandler(req: Request, res: Response) {
     if (isCredentialVaultWritesDisabled()) {
       return res.status(503).json({ error: 'Credential service unavailable', code: 'CREDENTIAL_SERVICE_UNAVAILABLE' });
     }
-    console.warn('[deleteConnectionHandler] Credential-service fallback for user:', uid);
+    logger.warn('[deleteConnectionHandler] Credential-service fallback for user:', uid);
   }
 
   await connectionService.deleteConnection(uid, id);
@@ -178,7 +179,7 @@ export async function testConnectionHandler(req: Request, res: Response) {
     if (isCredentialVaultWritesDisabled()) {
       return res.status(503).json({ error: 'Credential service unavailable', code: 'CREDENTIAL_SERVICE_UNAVAILABLE' });
     }
-    console.warn('[testConnectionHandler] Credential-service fallback for user:', uid);
+    logger.warn('[testConnectionHandler] Credential-service fallback for user:', uid);
   }
 
   res.json(await connectionService.testConnection(uid, id));
@@ -226,7 +227,7 @@ export async function oauthCallbackHandler(req: Request, res: Response) {
   } catch (error) {
     if (req.method === 'GET') {
       const raw = error instanceof Error ? error.message : 'OAuth connection failed';
-      console.error('[OAuthCallback] callback error:', raw, error);
+      logger.error('[OAuthCallback] callback error:', raw, error);
       const message = mapOAuthErrorToUserMessage(raw);
       return res.status(200).send(oauthCallbackHtml({ type: 'oauth-error', message }));
     }

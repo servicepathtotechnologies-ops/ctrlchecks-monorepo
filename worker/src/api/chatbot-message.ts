@@ -6,6 +6,7 @@ import { chatbotPageGenerator } from '../services/chatbot-page-generator';
 import { getDbClient } from '../core/database/aws-db-client';
 import { HybridMemoryService } from '../shared/memory';
 import { config } from '../core/config';
+import { logger } from '../core/logger';
 
 /**
  * Handle chatbot message
@@ -111,7 +112,7 @@ export async function handleChatbotMessage(req: Request, res: Response) {
         workflowOutput = await executeResponse.json();
       }
     } catch (error) {
-      console.error('Workflow execution error:', error);
+      logger.error('Workflow execution error:', error);
       executionError = { code: 500, data: { error: 'Workflow execution failed' } };
     }
 
@@ -180,7 +181,7 @@ export async function handleChatbotMessage(req: Request, res: Response) {
       reply: reply || 'I received your message.',
     });
   } catch (error) {
-    console.error('Error handling chatbot message:', error);
+    logger.error('Error handling chatbot message:', error);
     return res.status(500).json({
       reply: 'Sorry, an error occurred. Please try again.',
     });

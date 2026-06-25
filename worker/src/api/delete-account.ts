@@ -4,6 +4,7 @@ import { getDbPool } from '../core/database/db-pool';
 import { config } from '../core/config';
 import * as jwtLib from 'jsonwebtoken';
 import * as AWS from 'aws-sdk';
+import { logger } from '../core/logger';
 
 // DELETE /api/user/account
 // Authenticates the caller via their own JWT, wipes all user data from the DB,
@@ -57,13 +58,13 @@ export default async function deleteAccountHandler(req: Request, res: Response) 
           })
           .promise();
       } catch (cognitoErr: any) {
-        console.error('[DeleteAccount] Cognito deletion failed (non-fatal):', cognitoErr.message);
+        logger.error('[DeleteAccount] Cognito deletion failed (non-fatal):', cognitoErr.message);
       }
     }
 
     return res.json({ success: true });
   } catch (error) {
-    console.error('[DeleteAccount] Error:', error);
+    logger.error('[DeleteAccount] Error:', error);
     const message = error instanceof Error ? error.message : String(error);
     return res.status(500).json({ error: message });
   }
@@ -102,7 +103,7 @@ async function deleteUserData(userId: string): Promise<void> {
         !err.message?.includes('relation') &&
         !err.message?.toLowerCase().includes('undefined')
       ) {
-        console.warn('[DeleteAccount] Non-fatal SQL error:', err.message);
+        logger.warn('[DeleteAccount] Non-fatal SQL error:', err.message);
       }
     }
   };

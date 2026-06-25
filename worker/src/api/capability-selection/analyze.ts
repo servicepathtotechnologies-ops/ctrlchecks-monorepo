@@ -19,6 +19,7 @@ import { buildNodeCatalogText } from '../../services/ai/node-catalog-builder';
 import { runIntentAnalysis } from '../../services/ai/stages/capability-intent-analyzer';
 import { runCapabilityGrouping } from '../../services/ai/stages/capability-grouper-stage';
 import type { AuthenticatedRequest } from '../../core/middleware/subscription-auth';
+import { logger } from '../../core/logger';
 
 export default async function analyzeCapabilitySelection(req: AuthenticatedRequest, res: Response): Promise<void> {
   const startedAt = Date.now();
@@ -76,7 +77,7 @@ export default async function analyzeCapabilitySelection(req: AuthenticatedReque
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[CapabilitySelection/analyze] Unhandled error:', message);
+    logger.error('[CapabilitySelection/analyze] Unhandled error:', message);
     res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message });
   }
 }

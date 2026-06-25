@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import { toolSubstitutionEngine } from '../services/ai/tool-substitution-engine';
 import { getDbClient } from '../core/database/aws-db-client';
 import { Workflow } from '../core/types/ai-types';
+import { logger } from '../core/logger';
 
 interface ToolSubstituteRequest {
   workflowId?: string;
@@ -77,7 +78,7 @@ export async function substituteTools(req: Request, res: Response) {
       });
     }
 
-    console.log(`[ToolSubstitute] Processing ${substitutions.length} tool substitution(s)`);
+    logger.info(`[ToolSubstitute] Processing ${substitutions.length} tool substitution(s)`);
 
     // Perform substitutions
     const result = await toolSubstitutionEngine.substituteTools(
@@ -120,7 +121,7 @@ export async function substituteTools(req: Request, res: Response) {
         .eq('id', workflowId);
 
       if (updateError) {
-        console.error(`[ToolSubstitute] Error updating workflow:`, updateError);
+        logger.error(`[ToolSubstitute] Error updating workflow:`, updateError);
         return res.status(500).json({
           success: false,
           error: 'Failed to update workflow in database',
@@ -132,10 +133,10 @@ export async function substituteTools(req: Request, res: Response) {
     // Update pipeline if requested — no-op in AI-first pipeline (generation is direct)
     let pipelineResult = null;
     if (updatePipeline && workflowId) {
-      console.log(`[ToolSubstitute] Pipeline update requested — AI-first pipeline generates directly, no continuation needed`);
+      logger.info(`[ToolSubstitute] Pipeline update requested — AI-first pipeline generates directly, no continuation needed`);
     }
 
-    console.log(`[ToolSubstitute] ✅ Successfully substituted ${result.substitutedNodes.length} tool(s)`);
+    logger.info(`[ToolSubstitute] ✅ Successfully substituted ${result.substitutedNodes.length} tool(s)`);
 
     return res.json({
       success: true,
@@ -146,7 +147,7 @@ export async function substituteTools(req: Request, res: Response) {
       pipelineResult: pipelineResult || undefined,
     });
   } catch (error) {
-    console.error(`[ToolSubstitute] Error processing substitution:`, error);
+    logger.error(`[ToolSubstitute] Error processing substitution:`, error);
     return res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),
@@ -221,7 +222,7 @@ export async function getAvailableSubstitutions(req: Request, res: Response) {
       availableSubstitutions: availableTools,
     });
   } catch (error) {
-    console.error(`[ToolSubstitute] Error getting available substitutions:`, error);
+    logger.error(`[ToolSubstitute] Error getting available substitutions:`, error);
     return res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),

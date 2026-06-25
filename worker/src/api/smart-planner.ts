@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { startWorkflowGeneration, getSession, answerCredential } from '../orchestrator';
+import { logger } from '../core/logger';
 
 /**
  * POST /api/generate
@@ -28,7 +29,7 @@ export async function generateHandler(req: Request, res: Response) {
       graph: session.graph,
     });
   } catch (error) {
-    console.error('[SmartPlanner] generate error:', error);
+    logger.error('[SmartPlanner] generate error:', error);
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
     });
@@ -81,7 +82,7 @@ export async function answerHandler(req: Request, res: Response) {
       graph: updated.graph,
     });
   } catch (error) {
-    console.error('[SmartPlanner] answer error:', error);
+    logger.error('[SmartPlanner] answer error:', error);
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
     });

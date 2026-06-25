@@ -9,6 +9,7 @@ import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
 import { saveProviderToken, SocialProvider } from '../shared/social-token-manager';
 import { ErrorCode, createError } from '../core/utils/error-codes';
+import { logger } from '../core/logger';
 
 export default async function saveSocialTokenHandler(req: Request, res: Response) {
   try {
@@ -60,7 +61,7 @@ export default async function saveSocialTokenHandler(req: Request, res: Response
       message: `${provider} token saved successfully`,
     });
   } catch (error) {
-    console.error('[Save Social Token] Error:', error);
+    logger.error('[Save Social Token] Error:', error);
     return res.status(500).json({
       success: false,
       error: createError(ErrorCode.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to save token'),

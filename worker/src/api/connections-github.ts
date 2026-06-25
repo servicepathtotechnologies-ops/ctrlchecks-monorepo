@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { queryAsService } from '../core/database/db-pool';
 import { decryptToken } from '../core/utils/token-encryption';
+import { logger } from '../core/logger';
 
 /**
  * GitHub connection status + disconnect.
@@ -57,7 +58,7 @@ export async function githubStatusHandler(req: Request, res: Response) {
       },
     });
   } catch (err: any) {
-    console.error('[GitHubStatus]', err.message);
+    logger.error('[GitHubStatus]', err.message);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
@@ -74,7 +75,7 @@ export async function githubDisconnectHandler(req: Request, res: Response) {
 
     return res.json({ success: true, message: 'GitHub account disconnected' });
   } catch (err: any) {
-    console.error('[GitHubDisconnect]', err.message);
+    logger.error('[GitHubDisconnect]', err.message);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }

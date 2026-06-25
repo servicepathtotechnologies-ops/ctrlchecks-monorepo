@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { queryAsService } from '../core/database/db-pool';
+import { logger } from '../core/logger';
 
 type OAuthTableProvider = 'notion' | 'twitter' | 'salesforce' | 'instagram' | 'whatsapp';
 
@@ -33,7 +34,7 @@ export function makeOAuthTableDisconnectHandler(provider: OAuthTableProvider) {
 
       return res.json({ success: true, message: `${provider} account disconnected` });
     } catch (err: any) {
-      console.error(`[${provider}Disconnect]`, err.message);
+      logger.error(`[${provider}Disconnect]`, err.message);
       return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   };

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
+import { logger } from '../core/logger';
 
 /**
  * LinkedIn connection utilities:
@@ -40,7 +41,7 @@ export async function linkedinStatusHandler(req: Request, res: Response) {
       .maybeSingle();
 
     if (tokenError && tokenError.code !== 'PGRST116') {
-      console.error('[LinkedInStatus] Error querying linkedin_oauth_tokens:', tokenError.message);
+      logger.error('[LinkedInStatus] Error querying linkedin_oauth_tokens:', tokenError.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to load LinkedIn connection status',
@@ -67,7 +68,7 @@ export async function linkedinStatusHandler(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error('[LinkedInStatus] Unexpected error:', error);
+    logger.error('[LinkedInStatus] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -106,7 +107,7 @@ export async function linkedinDisconnectHandler(req: Request, res: Response) {
       .eq('user_id', userId);
 
     if (tokenError) {
-      console.error('[LinkedInDisconnect] Error deleting linkedin_oauth_tokens:', tokenError.message);
+      logger.error('[LinkedInDisconnect] Error deleting linkedin_oauth_tokens:', tokenError.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to delete LinkedIn tokens',
@@ -121,7 +122,7 @@ export async function linkedinDisconnectHandler(req: Request, res: Response) {
       .eq('service', 'linkedin');
 
     if (vaultError && vaultError.code !== 'PGRST116') {
-      console.error('[LinkedInDisconnect] Error deleting user_credentials (linkedin):', vaultError.message);
+      logger.error('[LinkedInDisconnect] Error deleting user_credentials (linkedin):', vaultError.message);
       // Non-fatal; tokens are already removed
     }
 
@@ -130,7 +131,7 @@ export async function linkedinDisconnectHandler(req: Request, res: Response) {
       message: 'LinkedIn account disconnected successfully',
     });
   } catch (error) {
-    console.error('[LinkedInDisconnect] Unexpected error:', error);
+    logger.error('[LinkedInDisconnect] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -203,7 +204,7 @@ export async function linkedinTestHandler(req: Request, res: Response) {
         break;
       } else {
         lastErrText = await response.text();
-        console.warn(`[LinkedInTest] LinkedIn /v2/${ep.name} error:`, status, lastErrText.slice(0, 200));
+        logger.warn(`[LinkedInTest] LinkedIn /v2/${ep.name} error:`, status, lastErrText.slice(0, 200));
       }
     }
 
@@ -235,7 +236,7 @@ export async function linkedinTestHandler(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error('[LinkedInTest] Unexpected error:', error);
+    logger.error('[LinkedInTest] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -274,7 +275,7 @@ export async function linkedinRefreshNowHandler(req: Request, res: Response) {
       .maybeSingle();
 
     if (tokenError && tokenError.code !== 'PGRST116') {
-      console.error('[LinkedInRefreshNow] Error querying tokens:', tokenError.message);
+      logger.error('[LinkedInRefreshNow] Error querying tokens:', tokenError.message);
       return res.status(500).json({
         success: false,
         error: 'Failed to load LinkedIn credentials',
@@ -306,7 +307,7 @@ export async function linkedinRefreshNowHandler(req: Request, res: Response) {
       message: 'LinkedIn token refreshed successfully (if refresh token was valid).',
     });
   } catch (error) {
-    console.error('[LinkedInRefreshNow] Unexpected error:', error);
+    logger.error('[LinkedInRefreshNow] Unexpected error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error',

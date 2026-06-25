@@ -5,6 +5,7 @@ import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
 import { config } from '../core/config';
 import { HybridMemoryService } from '../shared/memory';
+import { logger } from '../core/logger';
 
 interface ChatRequest {
   workflowId: string;
@@ -99,7 +100,7 @@ export default async function chatApiHandler(req: Request, res: Response) {
 
       workflowResponse = await response.json();
     } catch (error) {
-      console.error('Error executing workflow:', error);
+      logger.error('Error executing workflow:', error);
       return res.status(500).json({ 
         error: 'Failed to execute workflow',
         message: error instanceof Error ? error.message : String(error)
@@ -137,7 +138,7 @@ export default async function chatApiHandler(req: Request, res: Response) {
 
     return res.json(response);
   } catch (error) {
-    console.error('Chat API error:', error);
+    logger.error('Chat API error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return res.status(500).json({ error: errorMessage });
   }

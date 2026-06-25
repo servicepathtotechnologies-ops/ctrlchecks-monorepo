@@ -2,6 +2,7 @@
 
 import { Request, Response } from 'express';
 import { geminiOrchestrator } from '../services/ai/gemini-orchestrator';
+import { logger } from '../core/logger';
 
 export default async function analyzeWorkflowRequirements(req: Request, res: Response) {
   try {
@@ -42,7 +43,7 @@ export default async function analyzeWorkflowRequirements(req: Request, res: Res
       Respond with VALID JSON only.
     `;
 
-    console.log("Analyzing workflow requirements with Gemini");
+    logger.info("Analyzing workflow requirements with Gemini");
     const response = await geminiOrchestrator.processRequest('workflow-analysis', {
       prompt: `${systemPrompt}\n\nUser Request: ${prompt}`,
       temperature: 0.3,
@@ -63,13 +64,13 @@ export default async function analyzeWorkflowRequirements(req: Request, res: Res
 
       result = JSON.parse(jsonText);
     } catch (e) {
-      console.error("Failed to parse JSON", responseContent);
+      logger.error("Failed to parse JSON", responseContent);
       result = { requirements: [] }; // Fallback
     }
 
     return res.json(result);
   } catch (error) {
-    console.error('Error:', error);
+    logger.error('Error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return res.status(500).json({ error: errorMessage });
   }

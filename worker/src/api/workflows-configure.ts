@@ -13,6 +13,7 @@ import { workflowValidator } from '../services/ai/workflow-validator';
 import { Workflow } from '../core/types/ai-types';
 import { credentialDiscoveryPhase } from '../services/ai/credential-discovery-phase';
 import { ErrorCode } from '../core/utils/error-codes';
+import { logger } from '../core/logger';
 
 function asArray(value: any): any[] {
   if (Array.isArray(value)) return value;
@@ -77,7 +78,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
       });
     }
 
-    console.log(`[ConfigureWorkflow] Configuring workflow ${workflowId}`);
+    logger.info(`[ConfigureWorkflow] Configuring workflow ${workflowId}`);
 
     // Get current missing items to validate against
     const db = getDbClient();
@@ -93,7 +94,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
             userId = user.id;
           }
         } catch (authErr) {
-          console.warn('[ConfigureWorkflow] Auth error (non-fatal):', authErr);
+          logger.warn('[ConfigureWorkflow] Auth error (non-fatal):', authErr);
         }
       }
     }
@@ -181,7 +182,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
 
     // Step 1: Inject credentials
     if (credentials && Object.keys(credentials).length > 0) {
-      console.log(`[ConfigureWorkflow] Injecting ${Object.keys(credentials).length} credential(s)`);
+      logger.info(`[ConfigureWorkflow] Injecting ${Object.keys(credentials).length} credential(s)`);
       const credentialInjectionResult = await workflowLifecycleManager.injectCredentials(
         workflow,
         credentials,
@@ -201,7 +202,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
 
     // Step 2: Inject node inputs
     if (inputs && inputs.length > 0) {
-      console.log(`[ConfigureWorkflow] Injecting ${inputs.length} input(s)`);
+      logger.info(`[ConfigureWorkflow] Injecting ${inputs.length} input(s)`);
       
       workflow = {
         ...workflow,
@@ -233,7 +234,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
     workflow = await injectSatisfiedVaultReferences(workflow, userId);
 
     // Step 4: AI auto-config for remaining non-credential fields
-    console.log(`[ConfigureWorkflow] Running AI auto-config for remaining fields`);
+    logger.info(`[ConfigureWorkflow] Running AI auto-config for remaining fields`);
     try {
       const { universalNodeAIContext } = await import('../services/ai/universal-node-ai-context');
       const userPrompt = workflowData.name || 'Process workflow data';
@@ -263,21 +264,21 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
               );
               return autoFilledNode;
             } catch (autoFillError: any) {
-              console.warn(`[ConfigureWorkflow] Auto-fill failed for node ${node.id} (non-blocking):`, autoFillError.message);
+              logger.warn(`[ConfigureWorkflow] Auto-fill failed for node ${node.id} (non-blocking):`, autoFillError.message);
               return node; // Continue with original node if auto-fill fails
             }
           })
         ),
       };
       
-      console.log(`[ConfigureWorkflow] ✅ AI auto-config completed`);
+      logger.info(`[ConfigureWorkflow] ✅ AI auto-config completed`);
     } catch (autoConfigError: any) {
-      console.warn(`[ConfigureWorkflow] ⚠️ AI auto-config failed (non-blocking):`, autoConfigError.message);
+      logger.warn(`[ConfigureWorkflow] ⚠️ AI auto-config failed (non-blocking):`, autoConfigError.message);
       // Continue without auto-config - workflow can still be saved
     }
 
     // Step 5: Validate workflow
-    console.log(`[ConfigureWorkflow] Validating workflow`);
+    logger.info(`[ConfigureWorkflow] Validating workflow`);
     const validation = await workflowValidator.validateAndFix(workflow);
     
     if (!validation.valid) {
@@ -319,7 +320,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
       .eq('id', workflowId);
 
     if (updateError) {
-      console.error('[ConfigureWorkflow] Failed to save workflow:', updateError);
+      logger.error('[ConfigureWorkflow] Failed to save workflow:', updateError);
       return res.status(500).json({
         code: ErrorCode.INTERNAL_ERROR,
         error: 'Failed to save workflow',
@@ -327,7 +328,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
       });
     }
 
-    console.log(`[ConfigureWorkflow] ✅ Workflow ${workflowId} configured and marked as ready_to_run`);
+    logger.info(`[ConfigureWorkflow] ✅ Workflow ${workflowId} configured and marked as ready_to_run`);
 
     return res.json({
       success: true,
@@ -341,7 +342,7 @@ export default async function configureWorkflowHandler(req: Request, res: Respon
       message: 'Workflow configured successfully',
     });
   } catch (error: any) {
-    console.error('[ConfigureWorkflow] Error:', error);
+    logger.error('[ConfigureWorkflow] Error:', error);
     return res.status(500).json({
       code: ErrorCode.INTERNAL_ERROR,
       error: 'Failed to configure workflow',

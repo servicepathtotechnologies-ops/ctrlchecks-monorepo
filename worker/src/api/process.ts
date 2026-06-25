@@ -4,6 +4,7 @@
 
 import { Request, Response } from 'express';
 import { config } from '../core/config';
+import { logger } from '../core/logger';
 
 // Get Python backend URL (FastAPI backend)
 // Use FASTAPI_OLLAMA_URL from config, or fallback to PYTHON_BACKEND_URL, or default to port 8000
@@ -16,7 +17,7 @@ async function proxyToPythonBackend(payload: any): Promise<{ status: number; tex
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
 
-    console.log(`📤 Proxying /process request to Python backend at ${PYTHON_BACKEND_URL}/process...`);
+    logger.info(`📤 Proxying /process request to Python backend at ${PYTHON_BACKEND_URL}/process...`);
 
     const response = await fetch(`${PYTHON_BACKEND_URL}/process`, {
       method: "POST",
@@ -45,7 +46,7 @@ async function proxyToPythonBackend(payload: any): Promise<{ status: number; tex
       };
     }
     
-    console.error("Error proxying to Python backend:", error);
+    logger.error("Error proxying to Python backend:", error);
     return {
       status: 502,
       text: JSON.stringify({
@@ -80,7 +81,7 @@ export default async function processRoute(req: Request, res: Response) {
       res.status(status).send(responseText);
     }
   } catch (error) {
-    console.error("Unexpected error in /process route:", error);
+    logger.error("Unexpected error in /process route:", error);
     return res.status(500).json({
       success: false,
       error: "Internal server error",

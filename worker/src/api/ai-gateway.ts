@@ -34,6 +34,7 @@ import {
 import { logAiEditorEvent, hashDiff, readAiEditorAuditForWorkflow } from '../services/ai/ai-editor-audit';
 import { GeminiWalletError, geminiWalletService } from '../services/ai/gemini-wallet-service';
 import { GEMINI_MODELS } from '../services/ai/gemini-models';
+import { logger } from '../core/logger';
 
 const router = Router();
 const llmAdapter = new LLMAdapter();
@@ -157,16 +158,16 @@ let initialized = false;
 async function initializeAIServices() {
   if (initialized) return;
   if (!config.geminiApiKey) {
-    console.warn('⚠️  GEMINI_API_KEY not set. AI features may be unavailable.');
+    logger.warn('⚠️  GEMINI_API_KEY not set. AI features may be unavailable.');
     initialized = true;
     return;
   }
   try {
-    console.log('🤖 Initializing AI Gateway (Gemini)...');
+    logger.info('🤖 Initializing AI Gateway (Gemini)...');
     initialized = true;
-    console.log('✅ AI Gateway initialized');
+    logger.info('✅ AI Gateway initialized');
   } catch (error) {
-    console.error('⚠️  AI Gateway initialization failed:', error);
+    logger.error('⚠️  AI Gateway initialization failed:', error);
     initialized = true;
   }
 }
@@ -184,7 +185,7 @@ router.post('/chatbot/message', async (req: Request, res: Response) => {
     const response = await chichuChatbot.handleMessage(session, message, context);
     res.json({ success: true, ...response, sessionId: session });
   } catch (error) {
-    console.error('Chatbot error:', error);
+    logger.error('Chatbot error:', error);
     sendAiGatewayError(res, error);
   }
 });
@@ -295,7 +296,7 @@ router.post('/field-ownership-guide', async (req: Request, res: Response) => {
 
     res.json({ success: true, guidance });
   } catch (error) {
-    console.error('Field ownership guide error:', error);
+    logger.error('Field ownership guide error:', error);
     res.status(200).json({ success: true, guidance: fallbackFieldOwnershipGuidance() });
   }
 });
@@ -356,7 +357,7 @@ No bullet points. No headings. No technical jargon. Under 80 words total. Write 
 
     res.json({ success: true, description });
   } catch (error) {
-    console.error('Node description error:', error);
+    logger.error('Node description error:', error);
     res.status(200).json({
       success: true,
       description: `This ${(req.body as any)?.nodeLabel || 'node'} performs its role in the workflow automatically.`,
@@ -512,7 +513,7 @@ Rules: No technical jargon. Under 35 words per key (needed may use up to 2 sente
 
     res.json({ success: true, descriptions: merged, buildAiUsage });
   } catch (error) {
-    console.error('Field descriptions error:', error);
+    logger.error('Field descriptions error:', error);
     res.status(200).json({ success: true, descriptions: {} });
   }
 });
@@ -714,7 +715,7 @@ Rules: No technical jargon. Under 35 words per key (needed may use up to 2 sente
 
     res.json({ success: true, description: finalDescription, fromCache: false, buildAiUsage });
   } catch (error) {
-    console.error('Field walk-step error:', error);
+    logger.error('Field walk-step error:', error);
     res.status(200).json({ success: true, description: null });
   }
 });
@@ -853,7 +854,7 @@ router.post('/editor/suggest', async (req: Request, res: Response) => {
       result: response,
     });
   } catch (error) {
-    console.error('AI Editor suggest error:', error);
+    logger.error('AI Editor suggest error:', error);
     sendAiGatewayError(res, error);
   }
 });
@@ -959,7 +960,7 @@ router.post('/editor/apply', async (req: Request, res: Response) => {
       const ver = aiEditorVersioning.versionWorkflow(versionWorkflowPayload as any, versionMetadata);
       versionId = ver?.version_id;
     } catch (versionError) {
-      console.warn('AI Editor versioning failed (non-fatal):', versionError);
+      logger.warn('AI Editor versioning failed (non-fatal):', versionError);
     }
 
     logAiEditorEvent({
@@ -985,7 +986,7 @@ router.post('/editor/apply', async (req: Request, res: Response) => {
       result: response,
     });
   } catch (error) {
-    console.error('AI Editor apply error:', error);
+    logger.error('AI Editor apply error:', error);
     sendAiGatewayError(res, error);
   }
 });
@@ -1157,7 +1158,7 @@ router.post('/editor/analyze', async (req: Request, res: Response) => {
       result: response,
     });
   } catch (error) {
-    console.error('AI Editor analyze error:', error);
+    logger.error('AI Editor analyze error:', error);
     sendAiGatewayError(res, error);
   }
 });
@@ -1206,7 +1207,7 @@ router.post('/editor/registry-context', async (req: Request, res: Response) => {
     const context = aiWorkflowEditor.buildRegistryContextForWorkflow(workflow);
     res.json({ success: true, context });
   } catch (error) {
-    console.error('AI Editor registry-context error:', error);
+    logger.error('AI Editor registry-context error:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -1256,7 +1257,7 @@ router.post('/builder/generate-from-prompt', async (req: Request, res: Response)
       });
     }
   } catch (error) {
-    console.error('Workflow generation error:', error);
+    logger.error('Workflow generation error:', error);
     sendAiGatewayError(res, error);
   }
 });

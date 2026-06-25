@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
+import { logger } from '../core/logger';
 
 type AppRole = 'admin' | 'moderator' | 'user';
 type WorkflowStatus = 'active' | 'inactive';
@@ -412,7 +413,7 @@ export default async function adminUsersHandler(req: Request, res: Response) {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('Admin users error:', error);
+    logger.error('Admin users error:', error);
     const message = error instanceof Error ? error.message : String(error);
     return res.status(500).json({ error: message });
   }

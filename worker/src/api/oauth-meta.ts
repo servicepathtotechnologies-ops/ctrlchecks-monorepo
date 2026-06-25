@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { handleOAuthCallback } from '../services/oauth-callback-handler';
+import { logger } from '../core/logger';
 
 const META_APP_ID =
   process.env.META_APP_ID ||
@@ -139,7 +140,7 @@ export async function instagramCallbackHandler(req: Request, res: Response) {
     }
     return res.json(responsePayload);
   } catch (err: any) {
-    console.error('[InstagramOAuth] Error:', err.message);
+    logger.error('[InstagramOAuth] Error:', err.message);
     return res.status(500).json({ error: err.message || 'Instagram OAuth failed' });
   }
 }
@@ -212,7 +213,7 @@ export async function whatsappCallbackHandler(req: Request, res: Response) {
     }
     return res.json(responsePayload);
   } catch (err: any) {
-    console.error('[WhatsAppOAuth] Error:', err.message);
+    logger.error('[WhatsAppOAuth] Error:', err.message);
     return res.status(500).json({ error: err.message || 'WhatsApp OAuth failed' });
   }
 }

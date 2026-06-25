@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { queryAsService } from '../core/database/db-pool';
 import { encryptToken } from '../core/utils/token-encryption';
+import { logger } from '../core/logger';
 
 const SALESFORCE_CLIENT_ID = process.env.SALESFORCE_CLIENT_ID || '';
 const SALESFORCE_CLIENT_SECRET = process.env.SALESFORCE_CLIENT_SECRET || '';
@@ -108,12 +109,12 @@ export async function salesforceCallbackHandler(req: Request, res: Response) {
         }),
       ]
     ).catch((err) => {
-      console.warn('[SalesforceOAuth] user_credentials mirror failed:', err.message);
+      logger.warn('[SalesforceOAuth] user_credentials mirror failed:', err.message);
     });
 
     return res.json({ success: true, instanceUrl: tokenData.instance_url, expiresAt });
   } catch (err: any) {
-    console.error('[SalesforceOAuth] Error:', err.message);
+    logger.error('[SalesforceOAuth] Error:', err.message);
     return res.status(500).json({ success: false, error: err.message || 'Salesforce OAuth failed' });
   }
 }

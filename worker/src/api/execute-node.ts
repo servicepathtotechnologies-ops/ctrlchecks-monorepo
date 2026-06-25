@@ -6,6 +6,7 @@ import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
 import { executeNode } from './execute-workflow';
 import { LRUNodeOutputsCache } from '../core/cache/lru-node-outputs-cache';
+import { logger } from '../core/logger';
 
 // WorkflowNode interface must match execute-workflow.ts
 interface WorkflowNode {
@@ -27,7 +28,7 @@ export default async function executeNodeHandler(req: Request, res: Response) {
   const db = getDbClient();
   const { runId, nodeId, nodeType, config: nodeConfig, input, workflowId, connectionRefs } = req.body;
 
-  console.log(`[DEBUG] Execute node request:`, {
+  logger.info(`[DEBUG] Execute node request:`, {
     runId,
     nodeId,
     nodeType,
@@ -57,7 +58,7 @@ export default async function executeNodeHandler(req: Request, res: Response) {
       .single();
 
     if (workflowError || !workflow) {
-      console.error('[DEBUG] Workflow fetch error:', workflowError);
+      logger.error('[DEBUG] Workflow fetch error:', workflowError);
       return res.status(404).json({
         success: false,
         error: 'Workflow not found',
@@ -87,18 +88,18 @@ export default async function executeNodeHandler(req: Request, res: Response) {
             const { data: { user }, error: authError } = await db.auth.getUser(token);
             if (!authError && user) {
               currentUserId = user.id;
-              console.log(`[DEBUG] Current user: ${currentUserId}`);
+              logger.info(`[DEBUG] Current user: ${currentUserId}`);
             } else if (authError) {
               // Log auth error but don't fail - node can still execute
-              console.log(`[DEBUG] Auth error (non-fatal): ${authError.message || 'Unknown auth error'}`);
+              logger.info(`[DEBUG] Auth error (non-fatal): ${authError.message || 'Unknown auth error'}`);
             }
           } catch (authErr: any) {
             // Handle network/connection errors gracefully
             const errorMsg = authErr?.message || 'Unknown error';
             if (errorMsg.includes('ENOTFOUND') || errorMsg.includes('fetch failed')) {
-              console.log('[DEBUG] DB connection issue - continuing without current user ID');
+              logger.info('[DEBUG] DB connection issue - continuing without current user ID');
             } else {
-              console.log(`[DEBUG] Auth extraction error (non-fatal): ${errorMsg}`);
+              logger.info(`[DEBUG] Auth extraction error (non-fatal): ${errorMsg}`);
             }
           }
         }
@@ -106,7 +107,7 @@ export default async function executeNodeHandler(req: Request, res: Response) {
     } catch (error: any) {
       // Auth is optional - node can still execute without it
       const errorMsg = error?.message || 'Unknown error';
-      console.log(`[DEBUG] Auth extraction failed (non-fatal): ${errorMsg}`);
+      logger.info(`[DEBUG] Auth extraction failed (non-fatal): ${errorMsg}`);
     }
 
     // Build node object in the format expected by executeNode
@@ -131,14 +132,14 @@ export default async function executeNodeHandler(req: Request, res: Response) {
       if (nodeConfig && Object.keys(nodeConfig).length > 0) {
         // Provided config takes precedence - merge saved config as fallback only
         node.data.config = { ...node.data.config, ...nodeConfig };
-        console.log(`[DEBUG] Using provided config (overrides saved config):`, Object.keys(nodeConfig));
+        logger.info(`[DEBUG] Using provided config (overrides saved config):`, Object.keys(nodeConfig));
       } else {
-        console.log(`[DEBUG] No provided config, using saved workflow config`);
+        logger.info(`[DEBUG] No provided config, using saved workflow config`);
       }
       // Merge connectionRefs from request (user's live selection in Properties Panel)
       if (connectionRefs && typeof connectionRefs === 'object' && Object.keys(connectionRefs).length > 0) {
         (node.data as any).connectionRefs = { ...((node.data as any).connectionRefs || {}), ...connectionRefs };
-        console.log(`[DEBUG] Merged connectionRefs from request:`, Object.keys(connectionRefs));
+        logger.info(`[DEBUG] Merged connectionRefs from request:`, Object.keys(connectionRefs));
       }
     } else if (nodeConfig) {
       // Node doesn't exist in workflow, use provided config
@@ -187,7 +188,7 @@ export default async function executeNodeHandler(req: Request, res: Response) {
     const unifiedContext = createUnifiedExecutionContext(input, nodeOutputs);
 
     // Execute the node using the same engine as full workflow
-    console.log(`[DEBUG] Executing node: ${node.data.label} (${nodeType})`);
+    logger.info(`[DEBUG] Executing node: ${node.data.label} (${nodeType})`);
     const output = await executeNode(
       node,
       input || {},
@@ -200,7 +201,7 @@ export default async function executeNodeHandler(req: Request, res: Response) {
 
     const executionTime = Date.now() - startTime;
 
-    console.log(`[DEBUG] Node execution completed in ${executionTime}ms`);
+    logger.info(`[DEBUG] Node execution completed in ${executionTime}ms`);
     
     // ✅ CLEAN OUTPUT FROM CONFIG VALUES (CORE ARCHITECTURE FIX)
     // Remove config values from output to ensure only actual output data is returned
@@ -224,7 +225,7 @@ export default async function executeNodeHandler(req: Request, res: Response) {
     const executionTime = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
-    console.error('[DEBUG] Node execution error:', error);
+    logger.error('[DEBUG] Node execution error:', error);
 
     return res.status(500).json({
       success: false,

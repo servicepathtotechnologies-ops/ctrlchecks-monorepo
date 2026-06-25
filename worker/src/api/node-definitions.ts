@@ -11,6 +11,7 @@ import { unifiedNodeRegistry } from '../core/registry/unified-node-registry';
 import { getOperationContractsForNode } from '../core/operations/operation-contract-resolver';
 import { resolveFieldPolicyForNode } from '../core/operations/field-policy-resolver';
 import type { UnifiedNodeDefinition } from '../core/types/unified-node-contract';
+import { logger } from '../core/logger';
 
 type OperationContract = ReturnType<typeof getOperationContractsForNode>[number];
 
@@ -144,7 +145,7 @@ export default async function nodeDefinitionsHandler(req: Request, res: Response
       byCategory: nodeDefinitionRegistry.getAllByCategory(),
     });
   } catch (error) {
-    console.error('[NodeDefinitions] Error:', error);
+    logger.error('[NodeDefinitions] Error:', error);
     return res.status(500).json({
       error: 'Failed to fetch node definitions',
       message: error instanceof Error ? error.message : 'Unknown error',

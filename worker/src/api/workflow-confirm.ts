@@ -18,6 +18,7 @@ import { unifiedNormalizeNodeType, unifiedNormalizeNodeTypeString } from '../cor
 import { pendingCredentialStore } from '../services/ai/pending-credential-store';
 import { credentialInjector } from '../services/ai/credential-injector';
 import { buildSyncedGraphPayload } from './workflow-graph-state';
+import { logger } from '../core/logger';
 
 interface ConfirmRequest {
   workflowId: string;
@@ -51,11 +52,11 @@ function applyToolOverrides(
       const newSchema = nodeLibrary.getSchema(override.newTool);
       
       if (!newSchema) {
-        console.warn(`[WorkflowConfirm] Tool override failed: ${override.newTool} not found in node library`);
+        logger.warn(`[WorkflowConfirm] Tool override failed: ${override.newTool} not found in node library`);
         return node;
       }
 
-      console.log(`[WorkflowConfirm] Applying tool override: ${nodeType} → ${override.newTool} for node ${node.id}`);
+      logger.info(`[WorkflowConfirm] Applying tool override: ${nodeType} → ${override.newTool} for node ${node.id}`);
       
       return {
         ...node,
@@ -96,7 +97,7 @@ function applyNodeOverrides(
   Object.values(nodeOverrides).forEach(override => {
     if (override.action === 'remove') {
       // Remove node and its edges
-      console.log(`[WorkflowConfirm] Removing node ${override.nodeId}`);
+      logger.info(`[WorkflowConfirm] Removing node ${override.nodeId}`);
       updatedNodes = updatedNodes.filter(n => n.id !== override.nodeId);
       updatedEdges = updatedEdges.filter(
         e => e.source !== override.nodeId && e.target !== override.nodeId
@@ -109,11 +110,11 @@ function applyNodeOverrides(
         const newSchema = nodeLibrary.getSchema(override.newNodeType);
         
         if (!newSchema) {
-          console.warn(`[WorkflowConfirm] Node override failed: ${override.newNodeType} not found in node library`);
+          logger.warn(`[WorkflowConfirm] Node override failed: ${override.newNodeType} not found in node library`);
           return;
         }
 
-        console.log(`[WorkflowConfirm] Replacing node ${override.nodeId}: ${unifiedNormalizeNodeType(node)} → ${override.newNodeType}`);
+        logger.info(`[WorkflowConfirm] Replacing node ${override.nodeId}: ${unifiedNormalizeNodeType(node)} → ${override.newNodeType}`);
         
         updatedNodes[nodeIndex] = {
           ...node,
@@ -130,12 +131,12 @@ function applyNodeOverrides(
       // Add new node
       const newSchema = nodeLibrary.getSchema(override.newNodeType);
       if (!newSchema) {
-        console.warn(`[WorkflowConfirm] Node add failed: ${override.newNodeType} not found in node library`);
+        logger.warn(`[WorkflowConfirm] Node add failed: ${override.newNodeType} not found in node library`);
         return;
       }
 
       const newNodeId = `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      console.log(`[WorkflowConfirm] Adding new node ${newNodeId} of type ${override.newNodeType}`);
+      logger.info(`[WorkflowConfirm] Adding new node ${newNodeId} of type ${override.newNodeType}`);
       
       updatedNodes.push({
         id: newNodeId,
@@ -177,7 +178,7 @@ async function updateWorkflowStateInDatabase(
       .single();
 
     if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = not found
-      console.error(`[WorkflowConfirm] Error fetching workflow:`, fetchError);
+      logger.error(`[WorkflowConfirm] Error fetching workflow:`, fetchError);
       throw fetchError;
     }
 
@@ -219,11 +220,11 @@ async function updateWorkflowStateInDatabase(
         .eq('id', workflowId);
 
       if (updateError) {
-        console.error(`[WorkflowConfirm] Error updating workflow:`, updateError);
+        logger.error(`[WorkflowConfirm] Error updating workflow:`, updateError);
         throw updateError;
       }
 
-      console.log(`[WorkflowConfirm] ✅ Updated workflow ${workflowId} state to ${state} (DB status: ${dbStatus})`);
+      logger.info(`[WorkflowConfirm] ✅ Updated workflow ${workflowId} state to ${state} (DB status: ${dbStatus})`);
     } else {
       // Create new workflow entry if it doesn't exist
       if (!workflow) {
@@ -255,14 +256,14 @@ async function updateWorkflowStateInDatabase(
         });
 
       if (createError) {
-        console.error(`[WorkflowConfirm] Error creating workflow:`, createError);
+        logger.error(`[WorkflowConfirm] Error creating workflow:`, createError);
         throw createError;
       }
 
-      console.log(`[WorkflowConfirm] ✅ Created workflow ${workflowId} with state ${state} (DB status: ${dbStatus})`);
+      logger.info(`[WorkflowConfirm] ✅ Created workflow ${workflowId} with state ${state} (DB status: ${dbStatus})`);
     }
   } catch (error) {
-    console.error(`[WorkflowConfirm] Database update failed:`, error);
+    logger.error(`[WorkflowConfirm] Database update failed:`, error);
     throw error;
   }
 }
@@ -289,7 +290,7 @@ export async function confirmWorkflow(req: Request, res: Response) {
       });
     }
 
-    console.log(`[WorkflowConfirm] Processing confirmation for workflow ${workflowId}, approved: ${approved}`);
+    logger.info(`[WorkflowConfirm] Processing confirmation for workflow ${workflowId}, approved: ${approved}`);
 
     // Get confirmation request
     const confirmationRequest = workflowConfirmationManager.getConfirmationRequest(workflowId);
@@ -308,7 +309,7 @@ export async function confirmWorkflow(req: Request, res: Response) {
     // Apply overrides if provided
     let workflow = confirmationRequest.workflow;
     if (toolOverrides && Object.keys(toolOverrides).length > 0) {
-      console.log(`[WorkflowConfirm] Applying ${Object.keys(toolOverrides).length} tool override(s)`);
+      logger.info(`[WorkflowConfirm] Applying ${Object.keys(toolOverrides).length} tool override(s)`);
       
       // Use tool substitution engine for proper tool replacement
       const substitutions = Object.values(toolOverrides).map(override => ({
@@ -333,14 +334,14 @@ export async function confirmWorkflow(req: Request, res: Response) {
         
         // Log substitution results
         substitutionResult.substitutedNodes.forEach(sub => {
-          console.log(`[WorkflowConfirm] ✅ Substituted ${sub.fromTool} → ${sub.toTool} for node ${sub.nodeId}`);
+          logger.info(`[WorkflowConfirm] ✅ Substituted ${sub.fromTool} → ${sub.toTool} for node ${sub.nodeId}`);
         });
         
         if (substitutionResult.warnings.length > 0) {
-          console.warn(`[WorkflowConfirm] ⚠️  Substitution warnings:`, substitutionResult.warnings);
+          logger.warn(`[WorkflowConfirm] ⚠️  Substitution warnings:`, substitutionResult.warnings);
         }
       } else {
-        console.error(`[WorkflowConfirm] ❌ Tool substitution failed:`, substitutionResult.errors);
+        logger.error(`[WorkflowConfirm] ❌ Tool substitution failed:`, substitutionResult.errors);
         return res.status(400).json({
           success: false,
           error: 'Tool substitution failed',
@@ -351,7 +352,7 @@ export async function confirmWorkflow(req: Request, res: Response) {
     }
 
     if (nodeOverrides && Object.keys(nodeOverrides).length > 0) {
-      console.log(`[WorkflowConfirm] Applying ${Object.keys(nodeOverrides).length} node override(s)`);
+      logger.info(`[WorkflowConfirm] Applying ${Object.keys(nodeOverrides).length} node override(s)`);
       workflow = applyNodeOverrides(workflow, nodeOverrides);
     }
 
@@ -364,7 +365,7 @@ export async function confirmWorkflow(req: Request, res: Response) {
 
     if (!approved) {
       // Workflow rejected
-      console.log(`[WorkflowConfirm] Workflow ${workflowId} rejected by user`);
+      logger.info(`[WorkflowConfirm] Workflow ${workflowId} rejected by user`);
       
       // Update database state
       await updateWorkflowStateInDatabase(
@@ -419,12 +420,12 @@ export async function confirmWorkflow(req: Request, res: Response) {
         });
       }
       workflow = injectionResult.workflow;
-      console.log(`[WorkflowConfirm] ✅ Injected pending credentials for workflow ${workflowId}`);
+      logger.info(`[WorkflowConfirm] ✅ Injected pending credentials for workflow ${workflowId}`);
     }
 
     // Workflow approved — AI-first pipeline generates directly, no continuation step needed.
     // Return the workflow from the confirmation request as-is.
-    console.log(`[WorkflowConfirm] Workflow ${workflowId} approved`);
+    logger.info(`[WorkflowConfirm] Workflow ${workflowId} approved`);
 
     // Update database with confirmed workflow
     await updateWorkflowStateInDatabase(
@@ -444,16 +445,16 @@ export async function confirmWorkflow(req: Request, res: Response) {
       .eq('id', workflowId);
 
     if (confirmError) {
-      console.error(`[WorkflowConfirm] Error setting confirmed flag:`, confirmError);
+      logger.error(`[WorkflowConfirm] Error setting confirmed flag:`, confirmError);
     } else {
-      console.log(`[WorkflowConfirm] ✅ Set confirmed=true for workflow ${workflowId}`);
+      logger.info(`[WorkflowConfirm] ✅ Set confirmed=true for workflow ${workflowId}`);
     }
 
-    console.log(`[WorkflowConfirm] ✅ Workflow ${workflowId} confirmed successfully`);
+    logger.info(`[WorkflowConfirm] ✅ Workflow ${workflowId} confirmed successfully`);
 
     // Clear pending credentials now that workflow is confirmed and saved
     pendingCredentialStore.clear(workflowId);
-    console.log(`[WorkflowConfirm] ✅ Cleared pending credentials for workflow ${workflowId}`);
+    logger.info(`[WorkflowConfirm] ✅ Cleared pending credentials for workflow ${workflowId}`);
 
     return res.json({
       success: true,
@@ -464,7 +465,7 @@ export async function confirmWorkflow(req: Request, res: Response) {
       warnings: [],
     });
   } catch (error) {
-    console.error(`[WorkflowConfirm] Error processing confirmation:`, error);
+    logger.error(`[WorkflowConfirm] Error processing confirmation:`, error);
     return res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),

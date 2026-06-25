@@ -22,6 +22,7 @@ import { config } from '../core/config';
 import { encryptToken } from '../core/utils/token-encryption';
 import crypto from 'crypto';
 import AWS from 'aws-sdk';
+import { logger } from '../core/logger';
 
 const GITHUB_CLIENT_ID     = process.env.GITHUB_CLIENT_ID     || '';
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || '';
@@ -70,7 +71,7 @@ function githubCallbackUrl() {
 
 function setGitHubRedirectUri(authUrl: URL) {
   const redirectUri = githubCallbackUrl();
-  console.log(`[GitHubOAuth] redirect_uri ${omitGitHubRedirectUri ? 'omitted' : redirectUri}`);
+  logger.info(`[GitHubOAuth] redirect_uri ${omitGitHubRedirectUri ? 'omitted' : redirectUri}`);
   if (!omitGitHubRedirectUri) {
     authUrl.searchParams.set('redirect_uri', redirectUri);
   }
@@ -342,7 +343,7 @@ export async function githubOAuthCallback(req: Request, res: Response) {
         expiresAt:    Date.now() + 90_000,
       });
 
-      console.log(`[GitHubLogin] ✅ Login via GitHub for ${email} (sub: ${cognitoUserId} → canonical: ${canonicalUserId})`);
+      logger.info(`[GitHubLogin] ✅ Login via GitHub for ${email} (sub: ${cognitoUserId} → canonical: ${canonicalUserId})`);
 
       const returnUrl = encodeURIComponent(redirectTo || '/dashboard');
       return res.redirect(
@@ -366,7 +367,7 @@ export async function githubOAuthCallback(req: Request, res: Response) {
         [targetUserId, encryptToken(githubAccessToken), String(profile.id), tokenData.scope || 'user:email read:user']
       );
 
-      console.log(`[GitHubOAuth] ✅ Connected GitHub for user ${targetUserId} (login: ${profile.login})`);
+      logger.info(`[GitHubOAuth] ✅ Connected GitHub for user ${targetUserId} (login: ${profile.login})`);
 
       const returnUrl = encodeURIComponent(redirectTo || '/workflows');
       return res.redirect(
@@ -375,7 +376,7 @@ export async function githubOAuthCallback(req: Request, res: Response) {
     }
 
   } catch (err: any) {
-    console.error('[GitHubOAuth] Error:', err.message);
+    logger.error('[GitHubOAuth] Error:', err.message);
     return res.redirect(
       `${FRONTEND_URL}/auth/github/callback?error=${encodeURIComponent(err.message || 'oauth_failed')}`
     );

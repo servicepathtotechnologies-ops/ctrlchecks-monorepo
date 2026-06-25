@@ -10,6 +10,7 @@ import {
   getWorkflowAnalyzer,
 } from '../memory';
 import { getPrismaClient } from '../memory';
+import { logger } from '../core/logger';
 
 const router = Router();
 
@@ -43,7 +44,7 @@ router.post('/store-workflow', async (req: Request, res: Response) => {
       message: 'Workflow stored successfully',
     });
   } catch (error: any) {
-    console.error('Error storing workflow:', error);
+    logger.error('Error storing workflow:', error);
     res.status(500).json({
       error: 'Failed to store workflow',
       message: error.message,
@@ -72,7 +73,7 @@ router.get('/workflow/:id/context', async (req: Request, res: Response) => {
       context,
     });
   } catch (error: any) {
-    console.error('Error building context:', error);
+    logger.error('Error building context:', error);
     res.status(500).json({
       error: 'Failed to build context',
       message: error.message,
@@ -106,7 +107,7 @@ router.get('/similar/:id', async (req: Request, res: Response) => {
       similar,
     });
   } catch (error: any) {
-    console.error('Error finding similar workflows:', error);
+    logger.error('Error finding similar workflows:', error);
     res.status(500).json({
       error: 'Failed to find similar workflows',
       message: error.message,
@@ -137,7 +138,7 @@ router.post('/search', async (req: Request, res: Response) => {
       results,
     });
   } catch (error: any) {
-    console.error('Error searching workflows:', error);
+    logger.error('Error searching workflows:', error);
     res.status(500).json({
       error: 'Failed to search workflows',
       message: error.message,
@@ -168,7 +169,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
       analysis,
     });
   } catch (error: any) {
-    console.error('Error analyzing workflow:', error);
+    logger.error('Error analyzing workflow:', error);
     res.status(500).json({
       error: 'Failed to analyze workflow',
       message: error.message,
@@ -202,7 +203,7 @@ router.get('/analyze/:id/suggestions', async (req: Request, res: Response) => {
       issues: analysis.potentialIssues,
     });
   } catch (error: any) {
-    console.error('Error getting suggestions:', error);
+    logger.error('Error getting suggestions:', error);
     res.status(500).json({
       error: 'Failed to get suggestions',
       message: error.message,
@@ -256,7 +257,7 @@ router.post('/execute', async (req: Request, res: Response) => {
       message: 'Execution stored successfully',
     });
   } catch (error: any) {
-    console.error('Error storing execution:', error);
+    logger.error('Error storing execution:', error);
     res.status(500).json({
       error: 'Failed to store execution',
       message: error.message,
@@ -280,7 +281,7 @@ router.get('/executions/:workflowId/stats', async (req: Request, res: Response) 
       statistics,
     });
   } catch (error: any) {
-    console.error('Error getting execution stats:', error);
+    logger.error('Error getting execution stats:', error);
     res.status(500).json({
       error: 'Failed to get execution statistics',
       message: error.message,
@@ -302,7 +303,7 @@ router.get('/cache/stats', async (req: Request, res: Response) => {
       stats,
     });
   } catch (error: any) {
-    console.error('Error getting cache stats:', error);
+    logger.error('Error getting cache stats:', error);
     res.status(500).json({
       error: 'Failed to get cache statistics',
       message: error.message,
@@ -328,7 +329,7 @@ router.post('/prune', async (req: Request, res: Response) => {
       message: `Pruned ${deletedCount} old executions`,
     });
   } catch (error: any) {
-    console.error('Error pruning executions:', error);
+    logger.error('Error pruning executions:', error);
     res.status(500).json({
       error: 'Failed to prune executions',
       message: error.message,

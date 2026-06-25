@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { queryAsService } from '../core/database/db-pool';
+import { logger } from '../core/logger';
 
 /**
  * GET /api/auth/status
@@ -41,7 +42,7 @@ export async function authStatusHandler(req: Request, res: Response) {
 
     return res.json({ googleConnected, linkedinConnected });
   } catch (error) {
-    console.error('[AuthStatus] Unexpected error:', error);
+    logger.error('[AuthStatus] Unexpected error:', error);
     return res.status(500).json({
       googleConnected: false,
       linkedinConnected: false,

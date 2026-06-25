@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import { handleOAuthCallback } from '../services/oauth-callback-handler';
 import { getDbClient } from '../core/database/aws-db-client';
 import { config } from '../core/config';
+import { logger } from '../core/logger';
 
 /**
  * Type definitions for Notion OAuth responses
@@ -98,7 +99,7 @@ export async function notionAuthorizeHandler(req: Request, res: Response) {
     // For simplicity, we'll include it in the redirect
     res.redirect(authUrl.toString());
   } catch (error) {
-    console.error('Notion OAuth authorize error:', error);
+    logger.error('Notion OAuth authorize error:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to initiate Notion OAuth',
@@ -177,7 +178,7 @@ export async function notionCallbackHandler(req: Request, res: Response) {
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      console.error('Notion token exchange error:', errorText);
+      logger.error('Notion token exchange error:', errorText);
       return res.status(tokenResponse.status).json({
         success: false,
         error: `Failed to exchange code for token: ${errorText}`,
@@ -205,7 +206,7 @@ export async function notionCallbackHandler(req: Request, res: Response) {
         };
       }
     } catch (workspaceError) {
-      console.warn('Failed to fetch workspace info (non-fatal):', workspaceError);
+      logger.warn('Failed to fetch workspace info (non-fatal):', workspaceError);
     }
 
     const authenticatedUser = (req as any).user || user;
@@ -231,7 +232,7 @@ export async function notionCallbackHandler(req: Request, res: Response) {
       workspace_name: workspaceInfo?.workspace_name || null,
     });
   } catch (error) {
-    console.error('Notion OAuth callback error:', error);
+    logger.error('Notion OAuth callback error:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to process Notion OAuth callback',

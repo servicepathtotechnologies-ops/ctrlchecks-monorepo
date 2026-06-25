@@ -7,6 +7,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { config } from '../core/config';
 import { LLMAdapter } from '../shared/llm-adapter';
+import { logger } from '../core/logger';
 
 interface KnowledgeBase {
   product: {
@@ -78,10 +79,10 @@ function loadKnowledge(): KnowledgeBase {
     const knowledgePath = join(__dirname, '../data/website_knowledge.json');
     const knowledgeText = readFileSync(knowledgePath, 'utf-8');
     knowledgeCache = JSON.parse(knowledgeText) as KnowledgeBase;
-    console.log("Knowledge base loaded and parsed successfully");
+    logger.info("Knowledge base loaded and parsed successfully");
     return knowledgeCache;
   } catch (error) {
-    console.error("Failed to load knowledge base:", error);
+    logger.error("Failed to load knowledge base:", error);
     return getFallbackKnowledge();
   }
 }
@@ -301,7 +302,7 @@ export default async function chatbotHandler(req: Request, res: Response) {
     try {
       knowledge = loadKnowledge();
     } catch (error) {
-      console.error("Failed to load knowledge:", error);
+      logger.error("Failed to load knowledge:", error);
       knowledge = getFallbackKnowledge();
     }
 
@@ -312,7 +313,7 @@ export default async function chatbotHandler(req: Request, res: Response) {
     }
 
     const userMessage = message.trim();
-    console.log("Processing message:", userMessage);
+    logger.info("Processing message:", userMessage);
 
     // Check escalation
     if (shouldEscalate(userMessage, knowledge)) {
@@ -340,7 +341,7 @@ export default async function chatbotHandler(req: Request, res: Response) {
 
     // Use Gemini for AI responses
     const fullPrompt = buildPrompt(userMessage, knowledge);
-    console.log("Calling Gemini for chatbot response...");
+    logger.info("Calling Gemini for chatbot response...");
 
     try {
       // Use Gemini chat - the buildPrompt function already includes all context
@@ -362,7 +363,7 @@ export default async function chatbotHandler(req: Request, res: Response) {
         }
       );
 
-      console.log("Gemini response received");
+      logger.info("Gemini response received");
       
       const content = geminiResponse.content?.trim() || knowledge.personality.fallback;
       const suggestions = getSuggestions(userMessage, knowledge);
@@ -372,7 +373,7 @@ export default async function chatbotHandler(req: Request, res: Response) {
         suggestions,
       });
     } catch (apiError) {
-      console.error("Ollama request failed:", apiError);
+      logger.error("Ollama request failed:", apiError);
       // Fallback to FAQ or default response
       return res.json({
         content: knowledge.personality.fallback,
@@ -380,7 +381,7 @@ export default async function chatbotHandler(req: Request, res: Response) {
       });
     }
   } catch (error) {
-    console.error("Chatbot error:", error);
+    logger.error("Chatbot error:", error);
     return res.status(500).json({
       content:
         "Sorry, I'm having trouble responding right now. Please try again or contact our support team at support@ctrlchecks.com.",

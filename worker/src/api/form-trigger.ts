@@ -11,6 +11,7 @@ import {
   shouldUseTriggerService,
   dispatchFormRemote,
 } from '../services/trigger-service-client';
+import { logger } from '../core/logger';
 
 export { coerceFormFields, type FormFieldConfig } from './form-field-coercion';
 
@@ -183,7 +184,7 @@ export async function getFormConfig(req: Request, res: Response) {
       try {
         fields = JSON.parse(formConfig.fields || '[]');
       } catch (e) {
-        console.error("Failed to parse fields JSON:", e);
+        logger.error("Failed to parse fields JSON:", e);
         fields = [];
       }
     }
@@ -206,7 +207,7 @@ export async function getFormConfig(req: Request, res: Response) {
 
     return res.json(formConfigResponse);
   } catch (error) {
-    console.error("Form trigger error:", error);
+    logger.error("Form trigger error:", error);
     return res.status(500).json({ 
       error: "Server error", 
       message: error instanceof Error ? error.message : "Internal server error" 
@@ -231,7 +232,7 @@ export async function submitForm(req: Request, res: Response) {
         executionId: delegated.executionId,
       });
     }
-    console.warn(`[form-trigger] trigger-service returned null for ${workflowId}/${nodeId} — local fallback`);
+    logger.warn(`[form-trigger] trigger-service returned null for ${workflowId}/${nodeId} — local fallback`);
   }
 
   try {
@@ -303,7 +304,7 @@ export async function submitForm(req: Request, res: Response) {
       .single();
 
     if (existingSubmission) {
-      console.log("Duplicate submission detected, ignoring:", idempotencyKey);
+      logger.info("Duplicate submission detected, ignoring:", idempotencyKey);
       return res.json({ success: true, message: successMessage, duplicate: true });
     }
 
@@ -363,8 +364,8 @@ export async function submitForm(req: Request, res: Response) {
       .order("started_at", { ascending: false })
       .limit(5);
     
-    console.log(`[Form Submit] Looking for waiting execution - workflowId: ${workflowId}, nodeId: ${effectiveNodeId}`);
-    console.log(`[Form Submit] Recent executions for this workflow:`, allExecutions?.map((e: any) => ({
+    logger.info(`[Form Submit] Looking for waiting execution - workflowId: ${workflowId}, nodeId: ${effectiveNodeId}`);
+    logger.info(`[Form Submit] Recent executions for this workflow:`, allExecutions?.map((e: any) => ({
       id: e.id,
       status: e.status,
       trigger: e.trigger,
@@ -388,7 +389,7 @@ export async function submitForm(req: Request, res: Response) {
     // ✅ FIX: If workflow is active but no waiting execution exists, create one automatically
     // This allows form submissions to work even if workflow hasn't been executed yet
     if ((waitError || !waitingExecution) && workflow.status === "active") {
-      console.log("[Form Submit] No waiting execution found, but workflow is active. Creating waiting execution...");
+      logger.info("[Form Submit] No waiting execution found, but workflow is active. Creating waiting execution...");
       
       const startedAt = new Date().toISOString();
       const { data: newExecution, error: createError } = await db
@@ -409,7 +410,7 @@ export async function submitForm(req: Request, res: Response) {
         .single();
       
       if (createError || !newExecution) {
-        console.error("[Form Submit] Failed to create waiting execution:", createError);
+        logger.error("[Form Submit] Failed to create waiting execution:", createError);
         return res.status(500).json({
           error: "Server error",
           message: "Failed to create execution for form submission. Please try again.",
@@ -417,12 +418,12 @@ export async function submitForm(req: Request, res: Response) {
         });
       }
       
-      console.log("[Form Submit] ✅ Created waiting execution:", newExecution.id);
+      logger.info("[Form Submit] ✅ Created waiting execution:", newExecution.id);
       executionToUse = newExecution;
     } else if (waitError || !waitingExecution) {
       // Workflow is not active or execution not found - return error
-      console.error("No waiting execution found for form node:", effectiveNodeId, waitError);
-      console.error("Searched for:", {
+      logger.error("No waiting execution found for form node:", effectiveNodeId, waitError);
+      logger.error("Searched for:", {
         workflow_id: workflowId,
         status: "waiting",
         trigger: "form",
@@ -484,7 +485,7 @@ export async function submitForm(req: Request, res: Response) {
       .eq("id", executionToUse.id);
 
     if (updateError) {
-      console.error("Failed to update execution:", updateError);
+      logger.error("Failed to update execution:", updateError);
       return res.status(500).json({ 
         error: "Server error", 
         message: "Failed to process form submission. Please try again." 
@@ -493,7 +494,7 @@ export async function submitForm(req: Request, res: Response) {
 
     // Resume workflow execution asynchronously (don't wait for it)
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`[Form Submit] Resuming workflow execution ${executionToUse.id}...`);
+      logger.info(`[Form Submit] Resuming workflow execution ${executionToUse.id}...`);
     }
     
     // Get execute URL - require PUBLIC_BASE_URL in production
@@ -501,7 +502,7 @@ export async function submitForm(req: Request, res: Response) {
     if (config.publicBaseUrl) {
       executeUrl = `${config.publicBaseUrl}/api/execute-workflow`;
     } else if (process.env.NODE_ENV === 'production') {
-      console.error('[Form Submit] PUBLIC_BASE_URL is required in production');
+      logger.error('[Form Submit] PUBLIC_BASE_URL is required in production');
       return res.status(500).json({
         error: 'Configuration error',
         message: 'PUBLIC_BASE_URL environment variable is required in production.',
@@ -524,14 +525,14 @@ export async function submitForm(req: Request, res: Response) {
     .then(async (response) => {
       if (response.ok) {
         const result = await response.json();
-        console.log(`[Form Submit] Workflow resumed successfully:`, result);
+        logger.info(`[Form Submit] Workflow resumed successfully:`, result);
       } else {
         const error = await response.text();
-        console.error(`[Form Submit] Workflow resume failed (${response.status}):`, error);
+        logger.error(`[Form Submit] Workflow resume failed (${response.status}):`, error);
       }
     })
     .catch((err) => {
-      console.error("[Form Submit] Failed to resume workflow execution:", err);
+      logger.error("[Form Submit] Failed to resume workflow execution:", err);
     });
 
     // Return success response
@@ -541,7 +542,7 @@ export async function submitForm(req: Request, res: Response) {
 
     return res.json({ success: true, message: successMessage });
   } catch (error) {
-    console.error("Form trigger error:", error);
+    logger.error("Form trigger error:", error);
     return res.status(500).json({ 
       error: "Server error", 
       message: error instanceof Error ? error.message : "Internal server error" 
@@ -571,7 +572,7 @@ export default async function formTriggerHandler(req: Request, res: Response) {
                      originalUrl.includes('/submit') ||
                      path.includes('/submit');
 
-    console.log(`[Form Trigger] ${req.method} ${originalUrl} - workflowId: ${workflowId}, nodeId: ${nodeId}, isSubmit: ${isSubmit}`);
+    logger.info(`[Form Trigger] ${req.method} ${originalUrl} - workflowId: ${workflowId}, nodeId: ${nodeId}, isSubmit: ${isSubmit}`);
 
     if (req.method === 'GET') {
       return getFormConfig(req, res);

@@ -4,6 +4,7 @@ import { queryAsService } from '../core/database/db-pool';
 import { getCredentialVault } from '../services/credential-vault';
 import { formatCredentialError, resolveCredentialDryRun } from '../services/credential-resolver';
 import { requiredScopesForProvider } from '../services/credential-scope-registry';
+import { logger } from '../core/logger';
 
 export type CatalogAuthType =
   | 'oauth'
@@ -650,7 +651,7 @@ export function logConnectionConfigReadiness() {
     if (entry.vaultKey === 'github' && entry.callbackUrl?.includes('localhost:3001')) {
       setupStatus = 'callback_mismatch_risk';
     }
-    console.log(
+    logger.info(
       `[ConnectionCatalog] ${entry.provider}: ${setupStatus} env=[${entry.requiredEnv.join(',')}] callback=${entry.callbackUrl || 'unset'}`
     );
   }

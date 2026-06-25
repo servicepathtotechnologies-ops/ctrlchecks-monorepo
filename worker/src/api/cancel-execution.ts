@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
 import { releaseExecutionLock } from '../services/execution/execution-lock';
+import { logger } from '../core/logger';
 
 export async function cancelExecutionRoute(req: Request, res: Response) {
   const { executionId } = req.params;
@@ -55,7 +56,7 @@ export async function cancelExecutionRoute(req: Request, res: Response) {
     await releaseExecutionLock(db, workflowId, executionId);
   }
 
-  console.log(`[CancelExecution] Execution ${executionId} cancelled by user ${userId}`);
+  logger.info(`[CancelExecution] Execution ${executionId} cancelled by user ${userId}`);
 
   return res.json({ success: true, executionId, status: 'failed' });
 }

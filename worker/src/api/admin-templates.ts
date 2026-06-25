@@ -4,6 +4,7 @@
 import { Request, Response } from 'express';
 import { getDbClient } from '../core/database/aws-db-client';
 import { corsHeaders } from '../shared/cors';
+import { logger } from '../core/logger';
 
 interface TemplateInput {
   name: string;
@@ -129,7 +130,7 @@ export default async function adminTemplatesHandler(req: Request, res: Response)
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('Admin templates error:', error);
+    logger.error('Admin templates error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return res.status(500).json({ error: errorMessage });
   }

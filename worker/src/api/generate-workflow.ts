@@ -33,6 +33,7 @@ import type { WorkflowNode } from '../core/types/ai-types';
 import { compileSummaryV2FromWorkflow } from '../services/ai/summary-v2-compiler';
 import { validateSummaryV2 } from '../core/validation/summary-v2-validator';
 import { GeminiWalletError } from '../services/ai/gemini-wallet-service';
+import { logger } from '../core/logger';
 
 const pipeline = new WorkflowGenerationPipeline();
 
@@ -325,7 +326,7 @@ export default async function generateWorkflow(req: Request, res: Response): Pro
     const rawStreamHeader = req.headers['x-stream-progress'];
     const streamHeaderValue = Array.isArray(rawStreamHeader) ? rawStreamHeader[0] : rawStreamHeader;
     const isStreaming = ['true', '1', 'yes'].includes(String(streamHeaderValue || '').toLowerCase());
-    console.log(`[GenerateWorkflow] correlationId=${correlationId} mode=${mode || 'default'} stream=${isStreaming}`);
+    logger.info(`[GenerateWorkflow] correlationId=${correlationId} mode=${mode || 'default'} stream=${isStreaming}`);
 
     if (isStreaming) {
       // ── Streaming mode: emit NDJSON stage events ──────────────────────────
@@ -538,7 +539,7 @@ export default async function generateWorkflow(req: Request, res: Response): Pro
       });
       return;
     }
-    console.error('[GenerateWorkflow] Unhandled error:', message, error?.stack);
+    logger.error('[GenerateWorkflow] Unhandled error:', message, error?.stack);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
