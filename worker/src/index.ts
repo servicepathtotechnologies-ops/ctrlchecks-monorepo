@@ -133,7 +133,7 @@ import helmet from 'helmet';
 import { config } from './core/config';
 import { corsMiddleware, getAllowedOrigins } from './core/middleware/cors';
 import { errorHandler, asyncHandler } from './core/middleware/error-handler';
-import { httpLogger } from './core/logger';
+import { httpLogger, logger } from './core/logger';
 
 // AI: Gemini (GEMINI_API_KEY)
 import { modelManager } from './services/ai/model-manager';
@@ -2127,7 +2127,41 @@ async function startServer() {
       }
       process.exit(1);
     });
-    
+
+    // ── Graceful shutdown ────────────────────────────────────────────────────
+    // On SIGTERM (systemctl stop) or SIGINT (Ctrl-C):
+    //   1. Stop accepting new connections immediately.
+    //   2. Wait up to 30s for in-flight requests to complete.
+    //   3. Log completion via pino and exit cleanly.
+    const SHUTDOWN_TIMEOUT_MS = 30_000;
+    let shuttingDown = false;
+
+    const shutdown = (signal: string) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+
+      logger.infoObj({ signal }, 'graceful shutdown initiated');
+
+      // Stop accepting new TCP connections
+      server.close((err) => {
+        if (err) {
+          logger.error('graceful shutdown: server.close error:', err.message);
+          process.exit(1);
+        }
+        logger.infoObj({ signal }, 'graceful shutdown complete');
+        process.exit(0);
+      });
+
+      // Force-kill if requests don't drain within the timeout
+      setTimeout(() => {
+        logger.error('graceful shutdown: drain timeout exceeded, forcing exit');
+        process.exit(1);
+      }, SHUTDOWN_TIMEOUT_MS).unref();
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT',  () => shutdown('SIGINT'));
+
     console.log(`[ServerStartup] ✅ Server object created, listening should start soon...`);
     
   } catch (error) {

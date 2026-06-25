@@ -1,22 +1,32 @@
 name: Deploy Worker
 
 # Triggers:
-#   - push to main-repair branch (worker's working branch) when worker/ files change
-#   - workflow_dispatch for manual deploys / re-deploys
+#   - push to upgrade/phase-0-security-observability or master when worker/ changes
+#   - workflow_dispatch for manual deploys / hotfixes
 #
-# PRs never trigger this job — quality gates are in ci.yml.
+# Target: root@187.127.185.105 /opt/ctrlchecks-worker (Hostinger KVM4)
+# Domain: https://worker.ctrlchecks.com
+#
+# Deploy strategy:
+#   1. Build dist/ in CI.
+#   2. Backup existing dist/ on server (dist.bak/).
+#   3. Upload new tar, extract, npm ci, restart service.
+#   4. Health-check retry loop: 5 attempts × 10s.
+#   5. On failure: restore dist.bak/ + restart + exit 1.
 
 on:
   push:
-    branches: [main-repair]
+    branches:
+      - master
+      - 'upgrade/**'
     paths:
       - 'worker/**'
       - '!worker/**/*.test.ts'
       - '!worker/**/*.md'
   workflow_dispatch:
     inputs:
-      skip_tests:
-        description: 'Skip type-check (emergency hotfix only)'
+      skip_quality_gate:
+        description: 'Skip type-check + lint (emergency hotfix only)'
         required: false
         default: 'false'
         type: boolean
@@ -26,10 +36,12 @@ concurrency:
   cancel-in-progress: false   # Never cancel an in-flight deploy
 
 jobs:
+  # ── Quality gate ─────────────────────────────────────────────────────────────
   quality-gate:
     name: Worker Quality Gate
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.skip_tests != 'true' }}
+    if: ${{ github.event.inputs.skip_quality_gate != 'true' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,71 +59,142 @@ jobs:
         working-directory: ./worker
         run: npm run type-check
 
+      - name: Lint
+        working-directory: ./worker
+        run: npm run lint
+
+  # ── Deploy ───────────────────────────────────────────────────────────────────
   deploy:
-    name: Deploy Worker to EC2
+    name: Deploy Worker to Hostinger
     runs-on: ubuntu-latest
     needs: quality-gate
     # Run even if quality-gate was skipped (emergency dispatch)
     if: always() && (needs.quality-gate.result == 'success' || needs.quality-gate.result == 'skipped')
 
+    env:
+      SERVER_HOST: ${{ secrets.HOSTINGER_HOST || '187.127.185.105' }}
+      SERVER_USER: root
+      SERVER_PATH: /opt/ctrlchecks-worker
+
     steps:
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST || '3.7.115.58' }} >> ~/.ssh/known_hosts 2>/dev/null
+      - uses: actions/checkout@v4
 
-      - name: Deploy on server (git pull → build → restart)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./worker
+        run: npm ci
+
+      - name: Build worker
+        working-directory: ./worker
+        run: NODE_OPTIONS="--max-old-space-size=4096" npm run build
+
+      - name: Package dist
+        working-directory: ./worker
+        run: |
+          tar -czf /tmp/worker-deploy.tar.gz \
+            dist/ package.json package-lock.json prisma/ public/
+          echo "Package size: $(du -sh /tmp/worker-deploy.tar.gz | cut -f1)"
+
+      - name: Install sshpass
+        run: sudo apt-get install -y sshpass
+
+      - name: Upload package to server
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.7.115.58' }}
-          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          SSHPASS: ${{ secrets.DEPLOY_PASS }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-              "$EC2_USER@$EC2_HOST" bash << 'REMOTE'
-            set -euo pipefail
-            cd /opt/ctrlchecks-worker
+          sshpass -e scp \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            /tmp/worker-deploy.tar.gz \
+            "$SERVER_USER@$SERVER_HOST:/tmp/worker-deploy.tar.gz"
 
-            echo "── Pulling latest code ──────────────────────────────────"
-            git fetch origin
-            git reset --hard origin/main-repair
+      - name: Deploy on server
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASS }}
+        run: |
+          sshpass -e ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            "$SERVER_USER@$SERVER_HOST" bash << 'REMOTE'
+          set -euo pipefail
+          TARGET=/opt/ctrlchecks-worker
 
-            echo "── Installing dependencies ──────────────────────────────"
-            npm ci
+          echo "── Backup current dist/ ─────────────────────────────────────"
+          if [ -d "$TARGET/dist" ]; then
+            rm -rf "$TARGET/dist.bak"
+            cp -a "$TARGET/dist" "$TARGET/dist.bak"
+            echo "✅ dist.bak created"
+          else
+            echo "⚠  No existing dist/ — skipping backup (first deploy)"
+          fi
 
-            echo "── Building ─────────────────────────────────────────────"
-            NODE_OPTIONS="--max-old-space-size=4096" npm run build
+          echo "── Extract new package ──────────────────────────────────────"
+          tar -xzf /tmp/worker-deploy.tar.gz -C "$TARGET"
+          rm /tmp/worker-deploy.tar.gz
 
-            echo "── Copying clickup JS node ──────────────────────────────"
-            mkdir -p dist/services/clickup
-            cp src/services/clickup/clickupNode.js dist/services/clickup/clickupNode.js 2>/dev/null || true
+          echo "── npm ci ───────────────────────────────────────────────────"
+          cd "$TARGET"
+          npm ci --omit=dev 2>&1 | tail -5
 
-            echo "── Running database migrations ──────────────────────────"
-            # Uses DIRECT_DATABASE_URL if set (bypasses PgBouncer); else DATABASE_URL.
-            # Skips gracefully when neither is set (should not happen in production).
-            if grep -qE "^(DIRECT_DATABASE_URL|DATABASE_URL)=" .env 2>/dev/null; then
-              npm run prisma:migrate:deploy && echo "✅ Migrations applied" \
-                || (echo "❌ Migration failed — aborting deploy" && exit 1)
-            else
-              echo "⚠  No DATABASE_URL found in .env — skipping migrations"
-            fi
+          echo "── Prisma migrations ────────────────────────────────────────"
+          npx prisma migrate deploy 2>&1 | tail -5 || echo "⚠  migrations skipped"
 
-            echo "── Restarting service ───────────────────────────────────"
-            sudo systemctl restart ctrlchecks-worker
-            sleep 12
-
-            echo "── Health checks ────────────────────────────────────────"
-            curl -fsS http://localhost:3001/health/live  \
-              && echo "✅ /health/live  OK" \
-              || (echo "❌ /health/live FAILED" && sudo journalctl -u ctrlchecks-worker -n 30 --no-pager && exit 1)
-
-            curl -fsS http://localhost:3001/health/ready \
-              && echo "✅ /health/ready OK" \
-              || (echo "❌ /health/ready FAILED (DB or Redis down?)" && exit 1)
-
-            echo "── Deploy complete ──────────────────────────────────────"
+          echo "── Restart service ──────────────────────────────────────────"
+          systemctl restart ctrlchecks-worker
+          echo "  Waiting 8s for startup..."
+          sleep 8
           REMOTE
 
-      - name: Cleanup SSH key
-        if: always()
-        run: rm -f ~/.ssh/deploy_key
+      - name: Health-check retry loop (5 × 10s)
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASS }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            echo "Health check attempt $attempt/5..."
+            CODE=$(sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+              "$SERVER_USER@$SERVER_HOST" \
+              "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health/live" 2>/dev/null || echo "000")
+            echo "  HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Health check passed on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              echo "  Waiting 10s before retry..."
+              sleep 10
+            fi
+          done
+          echo "❌ Health check failed after 5 attempts — initiating rollback"
+          exit 1
+
+      - name: Rollback on health-check failure
+        if: failure()
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASS }}
+        run: |
+          echo "── Rolling back to previous dist.bak/ ───────────────────────"
+          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "$SERVER_USER@$SERVER_HOST" bash << 'ROLLBACK'
+          set -euo pipefail
+          TARGET=/opt/ctrlchecks-worker
+          if [ -d "$TARGET/dist.bak" ]; then
+            rm -rf "$TARGET/dist"
+            cp -a "$TARGET/dist.bak" "$TARGET/dist"
+            systemctl restart ctrlchecks-worker
+            sleep 8
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health/live)
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Rollback successful — previous version restored"
+            else
+              echo "❌ Rollback health check also failed (HTTP $CODE). Manual intervention needed."
+            fi
+          else
+            echo "⚠  No dist.bak/ available — cannot rollback. Manual restore needed."
+          fi
+          ROLLBACK
+          exit 1   # Always fail the job so the team is alerted

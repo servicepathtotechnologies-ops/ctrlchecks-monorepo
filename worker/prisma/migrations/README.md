@@ -43,3 +43,25 @@ npx prisma migrate dev --create-only
 ```
 
 Then apply them manually to your database.
+
+## Down-migration convention
+
+Prisma does not generate rollback SQL automatically. For every migration that
+makes a **destructive or hard-to-reverse change** (column drop, table drop,
+data backfill), add a `-- down:` comment block at the top of the `.sql` file
+so any engineer can revert it manually:
+
+```sql
+-- up: add notification_channel column
+-- down: ALTER TABLE notifications DROP COLUMN IF EXISTS notification_channel;
+
+ALTER TABLE notifications ADD COLUMN notification_channel TEXT NOT NULL DEFAULT 'email';
+```
+
+After writing the rollback SQL manually, mark the migration resolved via:
+
+```bash
+bash worker/scripts/rollback-migration.sh <migration_name>
+```
+
+See `worker/scripts/rollback-migration.sh` for the full rollback procedure.
